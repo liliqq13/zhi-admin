@@ -1523,6 +1523,13 @@ small { font-size: 12px; }
 <style id="open-meteo-weather-ui">
 .weather-source-credit,.weather-attribution{font-size:11px;line-height:1.5;color:#647386}.weather-source-credit{display:block;margin-top:4px}.weather-source-credit a,.weather-attribution a{color:#496d92;text-decoration:underline}.weather-attribution{margin:12px 0 0}.weather-attribution span{font-size:10px}.weather-metric{overflow:visible}.weather-metric #metricWeatherSource{position:static;display:block;line-height:1.6}.weather-metric .weather-source-credit{position:static;display:block}.map-source-note .weather-source-credit{display:inline}.map-source-note{max-width:85%;line-height:1.5}
 </style>
+<style id="map-weather-credit-ui">
+.map-page .weather-layer .map-weather-toggle{display:block!important;width:100%!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:inherit!important;font:inherit!important;text-align:left!important;cursor:pointer}
+.map-page .weather-layer .map-weather-toggle:focus-visible{outline:2px solid #397dff;outline-offset:4px}
+.map-page .weather-layer .map-weather-credit{display:flex!important;align-items:center;gap:5px;flex-wrap:wrap;position:static!important;margin-top:6px!important;padding-top:5px!important;border-top:1px solid #e3e8ef;font-size:11px!important;line-height:1.4!important;color:#607180}
+.map-page .weather-layer .map-weather-credit a{color:#496d92!important;font-size:11px!important;font-weight:500!important;text-decoration:underline!important;white-space:nowrap}
+.map-page .weather-layer .map-weather-credit span{display:inline!important;font-size:11px!important;font-weight:400!important;color:#8a99a6!important;line-height:1.4!important}
+</style>
 </head>
 <body data-zls-build="zls_v73_readable_smooth_drive">
 <div class="login" id="login">
@@ -1857,11 +1864,14 @@ small { font-size: 12px; }
       <text id="localRouteTitle" x="-9999" y="-9999">兴龙湖环湖测试段</text><text id="localRouteMeta" x="-9999" y="-9999">本地固化路线</text>
     </svg>
   </div>
-  <button class="weather-layer compact" id="mapWeatherCard" type="button" aria-expanded="false">
+  <div class="weather-layer compact" id="mapWeatherCard" role="group" aria-label="在线天气">
+    <button class="map-weather-toggle" type="button" aria-label="打开在线天气详情">
     <span id="mapWeather">正在获取天气…</span>
     <b id="mapVisibility">湿度 -- · 小时预报能见度 --</b>
     <em id="mapWeatherSource">天气服务 · 正在更新</em>
   </button>
+    <div class="map-weather-credit"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a><span aria-hidden="true">·</span><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" aria-label="天气数据许可：CC BY 4.0">许可</a></div>
+  </div>
   <div class="map-source-note">路线数据已内置｜离线可用 · <span class="weather-source-credit"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span></div>
   <div class="map-legend"><span><i class="done"></i>已行驶</span><span><i class="plan"></i>计划路线</span><span><i class="high"></i>高风险</span><span><i class="mid"></i>中风险</span></div>
   <div class="vehicle-drawer collapsed" id="vehicleDrawer">
@@ -3059,7 +3069,8 @@ function setDrawerExpanded(expanded){
   setTimeout(()=>{if(state.map&&state.onlineMapVisible)fitCurrentRoadRoute()},230);
 }
 if(drawerToggle)drawerToggle.onclick=()=>setDrawerExpanded(!vehicleDrawer.classList.contains("expanded"));
-if(weatherCard)weatherCard.onclick=()=>{
+if(weatherCard)weatherCard.onclick=(event)=>{
+  if(event.target.closest?.("a"))return;
   const expanded=weatherCard.classList.toggle("expanded");
   weatherCard.setAttribute("aria-expanded",String(expanded));
 };
@@ -3381,11 +3392,16 @@ window.addEventListener("unhandledrejection",function(event){
   }
   function renderSpecialFull(d){
     var fam=familyFor(d.kind,d),s=snap();
+    var isWeatherDetail=d.kind==="weather"||d.kind==="map-weather",weatherDetail=s.w||{};
+    var detailSource=isWeatherDetail?weatherSourceLabel(weatherDetail):(s.mode||"");
+    var detailUpdated=isWeatherDetail?(weatherDetail.updatedAt?window.ZLSWeather.timeText(weatherDetail.updatedAt,true)+"（北京时间）":"尚未获取在线数据"):(typeof telemetryAgeText==="function"?telemetryAgeText():"刚刚");
+    var detailCaptionTime=isWeatherDetail?weatherTimeText(weatherDetail):nowTime();
+    var weatherEvidence=isWeatherDetail?rows([["模型有效时间",weatherTimeText(weatherDetail)],["能见度预报时刻",weatherDetail.visibilityTime?window.ZLSWeather.timeText(weatherDetail.visibilityTime,true)+"（北京时间，小时预报）":"未提供"]]):"";
     full.className="zls-full-detail open zls-family-"+fam;
     document.getElementById("zlsFullTitle").textContent=d.title;
     var toc='<nav class="zls-detail-toc"><button class="active" data-zls-scroll="zlsFullOverview">总览</button><button data-zls-scroll="zlsFullKpis">核心指标</button><button data-zls-scroll="zlsFullDetails">模块详情</button><button data-zls-scroll="zlsFullEvidence">数据来源</button></nav>';
     var actions='<footer class="zls-full-actions"><button type="button" data-zls-full-action="back">返回平台</button><button type="button" data-zls-full-action="export">导出当前数据</button></footer>';
-    document.getElementById("zlsFullContent").innerHTML=toc+'<article class="zls-module-page zls-family-'+fam+'"><section id="zlsFullOverview" class="zls-module-banner zls-full-anchor"><div class="zls-module-copy"><small>'+h(d.eyebrow||"MODULE VIEW")+'</small><h1>'+h(d.title)+'</h1><p>'+h(d.summary)+'</p><span class="zls-module-state '+h(d.statusClass||"")+'">'+h(d.status)+'</span></div><div class="zls-module-visual">'+visualFor(d,s,fam)+'</div></section><section id="zlsFullKpis" class="zls-full-anchor">'+moduleKpis(d.kpis)+'</section><div class="zls-module-caption"><b>'+h((s.v&&s.v.plate)||"当前车辆")+'</b><span>'+h((s.v&&s.v.site)||"")+' · '+h(s.mode||"")+' · '+h(nowTime())+'</span></div><section id="zlsFullDetails" class="zls-full-anchor">'+moduleSections(d,fam)+'</section><section id="zlsFullEvidence" class="zls-detail-section zls-full-anchor"><h3>数据来源与更新时间</h3><div class="zls-detail-row"><small>数据来源</small><b>'+h(s.mode||"")+'</b></div><div class="zls-detail-row"><small>最后更新</small><b>'+h(typeof telemetryAgeText==="function"?telemetryAgeText():"刚刚")+'</b></div><div class="zls-detail-row"><small>安全边界</small><b>CAN Listen-only，仅查看/诊断/报告</b></div></section>'+actions+'</article>';
+    document.getElementById("zlsFullContent").innerHTML=toc+'<article class="zls-module-page zls-family-'+fam+'"><section id="zlsFullOverview" class="zls-module-banner zls-full-anchor"><div class="zls-module-copy"><small>'+h(d.eyebrow||"MODULE VIEW")+'</small><h1>'+h(d.title)+'</h1><p>'+h(d.summary)+'</p><span class="zls-module-state '+h(d.statusClass||"")+'">'+h(d.status)+'</span></div><div class="zls-module-visual">'+visualFor(d,s,fam)+'</div></section><section id="zlsFullKpis" class="zls-full-anchor">'+moduleKpis(d.kpis)+'</section><div class="zls-module-caption"><b>'+h((s.v&&s.v.plate)||"当前车辆")+'</b><span>'+h((s.v&&s.v.site)||"")+' · '+h(detailSource)+' · '+h(detailCaptionTime)+'</span></div><section id="zlsFullDetails" class="zls-full-anchor">'+moduleSections(d,fam)+'</section><section id="zlsFullEvidence" class="zls-detail-section zls-full-anchor"><h3>数据来源与更新时间</h3><div class="zls-detail-row"><small>数据来源</small><b>'+h(detailSource)+'</b></div><div class="zls-detail-row"><small>'+(isWeatherDetail?"数据获取时间":"最后更新")+'</small><b>'+h(detailUpdated)+'</b></div>'+weatherEvidence+'<div class="zls-detail-row"><small>安全边界</small><b>'+h(isWeatherDetail?"在线天气仅供参考，不替换测试记录的风险输入":"CAN Listen-only，仅查看/诊断/报告")+'</b></div></section>'+actions+'</article>';
     full.setAttribute("aria-hidden","false");document.body.classList.add("zls-detail-lock");full.scrollTop=0;
   }
   function renderDrawer(d){
@@ -3412,7 +3428,7 @@ window.addEventListener("unhandledrejection",function(event){
   function markAll(selector,kinds){var els=document.querySelectorAll(selector);for(var i=0;i<els.length;i++)mark(els[i],Array.isArray(kinds)?(kinds[i]||kinds[kinds.length-1]):kinds,i)}
   function refresh(){
     mark(document.getElementById("heroStatusDetail"),"vehicle-overview");mark(document.getElementById("testRecordSummary"),"test-record");markAll("#warningBenchmark .benchmark-card","warning-benchmark");markAll("#home .metric-card",["device-health","trip","weather","network"]);markAll("#home .scene",["inspection","position","trip-report"]);mark(document.getElementById("riskPanel"),"risk");markAll("#timeline article","timeline-event");
-    mark(document.getElementById("localRouteBadge"),"map-route");mark(document.querySelector("#map .weather-layer"),"map-weather");mark(document.getElementById("vehicleDrawer"),"map-vehicle");
+    mark(document.getElementById("localRouteBadge"),"map-route");mark(document.querySelector("#map .map-weather-toggle"),"map-weather");mark(document.getElementById("vehicleDrawer"),"map-vehicle");
     mark(document.querySelector("#safety .safety-header"),"safety-overview");mark(document.querySelector("#safety .safety-radar-card"),"safety-radar");markAll("#instruments .instrument","safety-instrument");markAll("#adviceList article","advice");markAll("#workorders article","workorder");mark(document.querySelector("#safety .scan-panel"),"scan");
     mark(document.querySelector("#ops .ops-hero"),"ops-device");markAll("#ops .ops-module-grid button","ops-module");mark(document.querySelector("#ops .install-main"),"installation");mark(document.querySelector("#ops .install-layout"),"installation");mark(document.querySelector("#ops .flow-card"),"work-flow");mark(document.querySelector("#ops .trip-analytics"),"trip-analytics");markAll("#reportButtons button","report-detail");markAll("#reports article","report-generated");
     mark(document.querySelector("#mine .profile-card"),"account");mark(document.querySelector("#mine .settings-card"),"system");markAll("#audit article","audit");mark(document.querySelector("#mine .boundary"),"boundary");
