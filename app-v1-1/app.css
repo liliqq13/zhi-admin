@@ -1,0 +1,29 @@
+:root{--app-top:env(safe-area-inset-top,0px);--app-left:env(safe-area-inset-left,0px);--app-right:env(safe-area-inset-right,0px)}
+html{overscroll-behavior-y:none;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html.app-native{--app-top:0px;--app-left:0px;--app-right:0px;--zls-safe-bottom:0px}
+html.app-installed body,html.app-native body{padding:0!important}
+html.app-installed .app,html.app-native .app{border-radius:0!important;min-height:100dvh;box-shadow:none}
+.topbar{height:calc(72px + var(--app-top))!important;padding-top:var(--app-top)!important;border-radius:0!important}
+.login{padding-top:calc(18px + var(--app-top))!important;padding-bottom:calc(18px + var(--zls-safe-bottom))!important}
+.zls-full-top{padding-top:calc(12px + var(--app-top))!important}
+.overlay aside{padding-top:calc(18px + var(--app-top))!important;padding-bottom:calc(18px + var(--zls-safe-bottom))!important}
+.app{padding-left:var(--app-left);padding-right:var(--app-right)}
+button,a,input,select,textarea{touch-action:manipulation}
+input,select,textarea{font-size:16px!important}
+.app-card{margin:14px 0;padding:18px;border:1px solid #e0e6ee;border-radius:22px;background:#fff;box-shadow:0 8px 24px #18263806}
+.app-card-head{display:flex;align-items:center;gap:12px}
+.app-card-head img{width:48px;height:48px;border-radius:13px}
+.app-card h3{font-size:17px;margin:0 0 5px;color:#17222e}
+.app-card p{font-size:13px;line-height:1.65;color:#647385;margin:9px 0}
+.app-card small{font-size:12px;color:#728093}
+.app-card-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:13px}
+.app-card button,.app-install-dialog button{border:0;min-height:46px;border-radius:13px;padding:11px 16px;background:#b81e2d;color:white;font-size:14px;font-weight:700;cursor:pointer}
+.app-card button.secondary{background:#eef2f7;color:#33465a}
+.app-card button:disabled{opacity:.55}
+.app-card [hidden],.app-network-banner[hidden]{display:none!important}
+.app-network-banner{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--zls-nav-height) + var(--zls-safe-bottom) + 10px);z-index:1940;width:max-content;max-width:calc(100% - 30px);padding:10px 14px;border:1px solid #ead6a6;border-radius:13px;background:#fff8e9;color:#72511b;box-shadow:0 5px 18px #17243214;font-size:13px;line-height:1.5;pointer-events:none}
+.app-install-dialog{width:min(430px,calc(100% - 32px));max-height:80dvh;overflow:auto;padding:23px;border:0;border-radius:24px;color:#182432;box-shadow:0 20px 90px #10203033}
+.app-install-dialog::backdrop{background:#15243466;backdrop-filter:blur(4px)}
+.app-install-dialog h2{font-size:21px;margin:0 0 13px}.app-install-dialog p{font-size:15px;line-height:1.8}.app-install-dialog button{width:100%;margin-top:10px}
+@media(display-mode:standalone){body{padding:0!important}.app{border-radius:0!important;min-height:100dvh;box-shadow:none}.topbar{border-radius:0!important}}
+@media(max-width:380px){.app-card{padding:15px}.app-card-actions button{flex:1}.app-network-banner{font-size:12px}}
