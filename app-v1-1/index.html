@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f4f7fa">
@@ -1200,22 +1201,23 @@ body.platform-ready .login{display:none!important}
 <script>
 window.ZLS_CONFIG = {
   staticPreview: location.protocol === "file:" || location.hostname.indexOf("github.io") !== -1 || location.hostname.indexOf("sandbox") !== -1,
-  amap: {
+  map: {
     enabled: true,
-    key: "",
-    securityJsCode: "",
-    center: [105.915520, 29.344820]
+    provider: "openstreetmap",
+    sourceCoordSystem: "gcj02",
+    tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    routeUrl: "https://router.project-osrm.org/route/v1/driving/"
   },
   weather: {
     enabled: true,
-    host: "p44ewv2ymh.re.qweatherapi.com",
-    key: "",
+    provider: "Open-Meteo",
     refreshMs: 600000,
-    timeoutMs: 4200,
+    timeoutMs: 8000,
+    // Approximate WGS84 route centres converted from the original GCJ-02 route centres.
     locations: {
-      taxi: "105.94,29.36",
-      bus: "105.95,29.32",
-      van: "106.00,29.39"
+      taxi: {latitude: 29.361764, longitude: 105.939880},
+      bus: {latitude: 29.320684, longitude: 105.942476},
+      van: {latitude: 29.406959, longitude: 105.926504}
     }
   },
   apiBase: ""
@@ -1515,6 +1517,12 @@ small { font-size: 12px; }
 </style>
 <link rel="stylesheet" href="./app.css">
 <script src="./app-config.js"></script>
+<script src="./weather-service.js"></script>
+<link rel="stylesheet" href="./vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="./online-map.css">
+<style id="open-meteo-weather-ui">
+.weather-source-credit,.weather-attribution{font-size:11px;line-height:1.5;color:#647386}.weather-source-credit{display:block;margin-top:4px}.weather-source-credit a,.weather-attribution a{color:#496d92;text-decoration:underline}.weather-attribution{margin:12px 0 0}.weather-attribution span{font-size:10px}.weather-metric{overflow:visible}.weather-metric #metricWeatherSource{position:static;display:block;line-height:1.6}.weather-metric .weather-source-credit{position:static;display:block}.map-source-note .weather-source-credit{display:inline}.map-source-note{max-width:85%;line-height:1.5}
+</style>
 </head>
 <body data-zls-build="zls_v73_readable_smooth_drive">
 <div class="login" id="login">
@@ -1731,7 +1739,7 @@ small { font-size: 12px; }
   <div class="metric-grid">
     <article class="metric-card"><div class="metric-icon"><svg><use href="#i-device"/></svg></div><small>设备健康</small><strong id="metricHealth">96%</strong><p>供电、温度、通信稳定</p><canvas id="chartHealth"></canvas><em>更新于 2 秒前</em></article>
     <article class="metric-card"><div class="metric-icon"><svg><use href="#i-route"/></svg></div><small>测试行程</small><strong id="metricKm">5.8km</strong><p id="metricRoute">兴龙湖环湖测试段</p><canvas id="chartRisk"></canvas><em>行程安全评分 94</em></article>
-    <article class="metric-card weather-metric"><div class="metric-icon"><svg><use href="#i-weather"/></svg></div><small>永川实时天气</small><strong id="metricWeather">🌧️ 大雨 24℃</strong><p id="metricVisibility">湿度 88% · 能见度 820m</p><canvas id="chartVisibility"></canvas><em id="metricWeatherSource">天气服务 · 正在更新</em></article>
+    <article class="metric-card weather-metric"><div class="metric-icon"><svg><use href="#i-weather"/></svg></div><small>永川在线天气</small><strong id="metricWeather">正在获取天气…</strong><p id="metricVisibility">湿度 -- · 小时预报能见度 --</p><canvas id="chartVisibility" hidden style="display:none"></canvas><em id="metricWeatherSource">天气服务 · 正在更新</em><span class="weather-source-credit"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span></article>
     <article class="metric-card"><div class="metric-icon"><svg><use href="#i-signal"/></svg></div><small>网络链路</small><strong id="metricNetwork">5G</strong><p id="metricLatency">延迟 42ms</p><canvas id="chartLatency"></canvas><em>设备心跳 · 实时</em></article>
   </div>
 
@@ -1767,7 +1775,7 @@ small { font-size: 12px; }
     <div class="vehicle-tabs" id="vehicleTabs"></div>
   </div>
   <div class="map-controls" aria-label="地图控制">
-    <button id="mapLayers" title="切换在线高德地图与稳定路线"><svg><use href="#i-layers"/></svg></button>
+    <button id="mapLayers" title="切换在线道路地图与稳定路线"><svg><use href="#i-layers"/></svg></button>
     <button id="mapLocate" title="完整显示当前路线"><svg><use href="#i-location"/></svg></button>
     <button id="mapZoomIn" title="放大地图" aria-label="放大地图">＋</button>
     <button id="mapZoomOut" title="缩小地图" aria-label="缩小地图">－</button>
@@ -1850,11 +1858,11 @@ small { font-size: 12px; }
     </svg>
   </div>
   <button class="weather-layer compact" id="mapWeatherCard" type="button" aria-expanded="false">
-    <span id="mapWeather">🌧️ 大雨 24℃</span>
-    <b id="mapVisibility">湿度 88% · 能见度 820m</b>
+    <span id="mapWeather">正在获取天气…</span>
+    <b id="mapVisibility">湿度 -- · 小时预报能见度 --</b>
     <em id="mapWeatherSource">天气服务 · 正在更新</em>
   </button>
-  <div class="map-source-note">路线数据已内置｜离线可用</div>
+  <div class="map-source-note">路线数据已内置｜离线可用 · <span class="weather-source-credit"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></span></div>
   <div class="map-legend"><span><i class="done"></i>已行驶</span><span><i class="plan"></i>计划路线</span><span><i class="high"></i>高风险</span><span><i class="mid"></i>中风险</span></div>
   <div class="vehicle-drawer collapsed" id="vehicleDrawer">
     <button class="drawer-toggle" id="drawerToggle" type="button" aria-expanded="false">
@@ -1994,7 +2002,7 @@ small { font-size: 12px; }
       </div>
     </div>
     <div class="diagnostic-grid" id="diagnosticGrid"></div>
-    <div class="diagnostic-note" id="diagnosticNote">系统将检查登录、设备数据、高德地图、天气服务、浏览器环境与缓存版本。</div>
+    <div class="diagnostic-note" id="diagnosticNote">系统将检查登录、设备数据、在线地图、天气服务、浏览器环境与缓存版本。</div>
   </div>
 
   <div class="section-title"><div><span>AUDIT TRAIL</span><h2>安全审计</h2></div></div>
@@ -2087,12 +2095,6 @@ function telemetryHistoryFor(id){
   if(state.backend){const arr=(state.telemetryHistory[id]||[]).slice();if(arr.length>=12)return arr}
   const profile=testPlaybackProfiles[id]||testPlaybackProfiles.taxi,record=testRecords[id]||testRecords.taxi;
   return profile.frames.map((f,index)=>{const risk=playbackRisk(f,record);return{ts:new Date(record.date+"T"+record.startTime+"+08:00").getTime()+index*1000,index,eventIndex:profile.eventIndex,speed:Number(f.speed)||0,distance:Number(f.distance)||0,visibility:Number(f.visibility)||0,risk:risk.score,delay:Number(f.delay)||0,ttc:risk.ttc,slope:record.slope,roadCondition:record.roadCondition,level:risk.level}})
-}
-function mapRuntimeState(){
-  if(state.onlineMapVisible&&state.map)return{level:"online",label:"高德在线",detail:"道路匹配完成"};
-  if(state.amapLoading)return{level:"warn",label:"稳定路线",detail:"高德连接中"};
-  if(state.amapLoadError)return{level:"bad",label:"地图异常",detail:"已降级为稳定路线"};
-  return{level:"warn",label:"稳定路线",detail:"在线地图可选"}
 }
 
 function activePageId(){const p=document.querySelector(".page.active");return p?p.id:"home"}
@@ -2250,30 +2252,48 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 function toast(s){const e=$("toast");e.textContent=s;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2200)}
 function fmtTime(x){try{return new Date(x).toLocaleString("zh-CN",{hour12:false})}catch{return "--"}}
 
-function weatherIcon(text){text=String(text||"");if(text.includes("雾")||text.includes("霾"))return "🌫️";if(text.includes("雷"))return "⛈️";if(text.includes("暴雨")||text.includes("大雨")||text.includes("中雨"))return "🌧️";if(text.includes("小雨")||text.includes("阵雨"))return "🌦️";if(text.includes("雪"))return "🌨️";if(text.includes("阴"))return "☁️";if(text.includes("晴"))return "☀️";return "🌤️"}
-function fallbackWeather(v){const text=v?.weather||"多云",presets={"大雾":{temp:21,humidity:94,windDir:"东北",windScale:"1",visibility:420},"大雨":{temp:24,humidity:88,windDir:"东",windScale:"3",visibility:820},"小雨":{temp:25,humidity:79,windDir:"东南",windScale:"2",visibility:1250}}[text]||{temp:25,humidity:76,windDir:"东南",windScale:"2",visibility:1600};return{id:v?.id||state.current,live:false,text,icon:weatherIcon(text),temp:presets.temp,feelsLike:presets.temp,humidity:presets.humidity,windDir:presets.windDir,windScale:presets.windScale,windSpeed:"--",visibility:presets.visibility,precip:"--",pressure:"--",obsTime:"",updatedAt:0,source:"场景兜底"}}
-function loadWeatherCache(id){if(weatherState.byVehicle[id])return weatherState.byVehicle[id];try{const raw=localStorage.getItem("zls_weather_v61_"+id),cached=raw&&JSON.parse(raw);if(cached&&cached.updatedAt&&Date.now()-cached.updatedAt<7200000){weatherState.byVehicle[id]=cached;return cached}}catch(e){}return null}
-function currentWeather(v=vNow()){return weatherState.byVehicle[v.id]||loadWeatherCache(v.id)||fallbackWeather(v)}
-function weatherVisibilityText(value){const n=Number(value);if(!Number.isFinite(n))return "--";return n>=1000?(n/1000).toFixed(n>=10000?0:1)+"km":Math.round(n)+"m"}
-function weatherTimeText(w){const raw=w?.obsTime||"";if(raw){const d=new Date(raw);if(!Number.isNaN(d.getTime()))return d.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false})+"观测"}return w?.live?"刚刚更新":"本地兜底"}
-function weatherSourceLabel(w){return (w?.live?"和风天气":"本地天气")+" · "+weatherTimeText(w)}
-function weatherLocationFor(id){return CFG.weather?.locations?.[id]||"105.92,29.34"}
-async function fetchRealtimeWeather(force=false){
-  const wc=CFG.weather||{};if(!wc.enabled||!wc.host||!wc.key)return;
-  const id=state.current,v=vNow(),existing=weatherState.byVehicle[id]||loadWeatherCache(id),refreshMs=Number(wc.refreshMs)||600000;
-  if(!force&&existing&&existing.live&&Date.now()-Number(existing.updatedAt||0)<refreshMs)return;
-  if(weatherState.inflight[id])return weatherState.inflight[id];
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Number(wc.timeoutMs)||4200);
-  const url=`https://${wc.host}/v7/weather/now?location=${encodeURIComponent(weatherLocationFor(id))}&key=${encodeURIComponent(wc.key)}&lang=zh&unit=m&_=${Date.now()}`;
-  const job=(async()=>{try{
-    const res=await fetch(url,{cache:"no-store",signal:controller.signal,headers:{Accept:"application/json"}});if(!res.ok)throw new Error("WEATHER_HTTP_"+res.status);
-    const data=await res.json();if(!data||data.code!=="200"||!data.now)throw new Error("WEATHER_DATA_"+(data&&data.code||"EMPTY"));
-    const now=data.now,visKm=Number(now.vis),item={id,live:true,text:now.text||v.weather||"多云",icon:weatherIcon(now.text),temp:Number.isFinite(Number(now.temp))?Number(now.temp):"--",feelsLike:Number.isFinite(Number(now.feelsLike))?Number(now.feelsLike):"--",humidity:Number.isFinite(Number(now.humidity))?Number(now.humidity):"--",windDir:now.windDir||"--",windScale:now.windScale||"--",windSpeed:now.windSpeed||"--",visibility:Number.isFinite(visKm)?Math.max(0,Math.round(visKm*1000)):fallbackWeather(v).visibility,precip:now.precip||"--",pressure:now.pressure||"--",obsTime:now.obsTime||data.updateTime||"",updatedAt:Date.now(),source:"和风天气"};
-    weatherState.byVehicle[id]=item;try{localStorage.setItem("zls_weather_v61_"+id,JSON.stringify(item))}catch(e){}
-  }catch(err){console.warn("Weather fallback active",err);if(!existing)weatherState.byVehicle[id]=fallbackWeather(v)}finally{clearTimeout(timer);delete weatherState.inflight[id];scheduleActiveRender(0,true)}})();
-  weatherState.inflight[id]=job;return job
+/* ZLS_WEATHER_ADAPTER_BEGIN */
+let zlsOpenWeatherService = null;
+function weatherService(){
+  if(!zlsOpenWeatherService){
+    let storage=null;try{storage=localStorage}catch(e){}
+    zlsOpenWeatherService=window.ZLSWeather.createService({...CFG.weather,storage});
+  }
+  return zlsOpenWeatherService;
 }
-function startWeatherService(){for(const v of vehicles)loadWeatherCache(v.id);fetchRealtimeWeather(false);if(!weatherState.timer)weatherState.timer=setInterval(()=>{if(!document.hidden)fetchRealtimeWeather(false)},Number(CFG.weather?.refreshMs)||600000)}
+function weatherIcon(text){return window.ZLSWeather.icon(text)}
+function fallbackWeather(v){return{id:v?.id||state.current,provider:null,live:false,stale:false,status:"unavailable",text:"天气暂不可用",icon:"🌡️",temp:"--",feelsLike:"--",humidity:"--",windDir:"--",windScale:"--",windSpeed:"--",visibility:null,visibilityTime:null,visibilityKind:"小时预报",precip:"--",pressure:"--",obsTime:"",observedAt:"暂无在线数据",updatedAt:0,source:"在线天气未连接"}}
+function weatherForUI(item,v){
+  if(!item)return fallbackWeather(v);
+  const result={...item};
+  for(const field of ["temp","feelsLike","humidity","windSpeed","windScale","precip","pressure"]){if(result[field]===null||result[field]===undefined)result[field]="--"}
+  return result;
+}
+function loadWeatherCache(id){const v=vehicles.find(x=>x.id===id)||{id};return weatherForUI(weatherService().get(id),v)}
+function currentWeather(v=vNow()){return weatherForUI(weatherService().get(v.id),v)}
+function weatherVisibilityText(value){return window.ZLSWeather.visibilityText(value)}
+function weatherTimeText(w){return w?.provider==="Open-Meteo"?window.ZLSWeather.timeText(w.modelTime,true)+"（北京时间，模型）":"暂无在线数据"}
+function weatherSourceLabel(w){return window.ZLSWeather.sourceLabel(w)}
+function weatherLocationFor(id){return CFG.weather?.locations?.[id]||null}
+function weatherForecastText(w){return "小时预报能见度 "+weatherVisibilityText(w?.visibility)+(w?.visibilityTime?" · "+window.ZLSWeather.timeText(w.visibilityTime,false):"")}
+function weatherStatusText(w){return w?.live?"在线模型已更新":w?.provider==="Open-Meteo"?(w.stale?"缓存已过期":"缓存待更新"):"天气未连接"}
+function weatherAttributionHtml(){return '<p class="weather-attribution"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">天气数据：Open-Meteo</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a><span> · 已作中文说明与单位展示</span></p>'}
+async function fetchRealtimeWeather(force=false){
+  if(!CFG.weather?.enabled)return;
+  const id=state.current;
+  const item=await weatherService().refresh(id,force);
+  weatherState.byVehicle[id]=weatherForUI(item,vehicles.find(v=>v.id===id));
+  scheduleActiveRender(0,true);
+  return item;
+}
+function startWeatherService(){
+  for(const v of vehicles)loadWeatherCache(v.id);
+  const refreshAll=()=>weatherService().refreshAll(false).then(()=>scheduleActiveRender(0,true));
+  refreshAll();
+  if(!weatherState.timer)weatherState.timer=setInterval(()=>{if(!document.hidden)refreshAll()},Number(CFG.weather?.refreshMs)||600000);
+}
+/* ZLS_WEATHER_ADAPTER_END */
+
 
 function vNow(){return (state.data?.vehicles||vehicles).find(x=>x.id===state.current)||vehicles[0]}
 function tNow(){return (state.data?.telemetry||[]).find(x=>x.vehicleId===state.current)||localTel(vNow(),vehicles.findIndex(x=>x.id===state.current))}
@@ -2441,8 +2461,8 @@ function renderHome(force=false){
   $("previewBadge").classList.add("show");setCachedText("previewBadge","项目测试记录");renderTestRecordSummary();
   renderVehiclePresentation();
   $("safetyLight").style.background=ui.color+"55";
-  setCachedText("heroRtk",t.rtkOk?t.accuracy+"m":"异常");setCachedText("heroCan",t.canOk?"正常":"异常");setCachedText("heroDevice",v.deviceId+" "+(t.netOk?"在线":"异常"));setCachedText("heroNet",t.networkDelay+"ms");setCachedText("heroScore",safe);setCachedText("heroState",ui.safe);setCachedText("heroReason",t.reason);setCachedText("heroUpdate",testRecordFrameText());setCachedText("chipDevice",t.netOk?"设备在线":"设备异常");setCachedText("chipCan",t.canOk?"CAN正常":"CAN异常");setCachedText("chipRtk",t.rtkOk?"RTK FIX":"定位异常");setCachedText("chipNet",t.netOk?"5G在线":"通信异常");setCachedText("metricHealth",(o.health||96)+"%");setCachedText("metricKm",v.todayKm+"km");setCachedText("metricRoute",v.site.replace("重庆永川 · ",""));const w=currentWeather(v);setCachedText("metricWeather",w.icon+" "+w.text+" "+w.temp+"℃");setCachedText("metricVisibility","湿度 "+w.humidity+"% · 能见度 "+weatherVisibilityText(w.visibility));setCachedText("metricWeatherSource",weatherSourceLabel(w));const weatherSourceEl=$("metricWeatherSource");if(weatherSourceEl)weatherSourceEl.classList.toggle("weather-live",!!w.live);setCachedText("metricNetwork",t.netOk?"5G":"异常");setCachedText("metricLatency","延迟 "+t.networkDelay+"ms");setCachedText("sceneMapText","已行驶 "+t.routeDoneKm+" / "+v.routeKm+"km");setCachedText("sceneTripText","安全评分 "+trip.score+" · 预警 "+trip.alerts+" 次");setCachedText("riskTitle",t.riskLevel==="正常"?"车辆状态稳定，无需处理":t.reason);setCachedText("riskLevel",t.riskLevel);$("riskLevel").style.color=ui.color;$("riskPanel").querySelector(".risk-edge").style.background=ui.color;setCachedText("riskScore",t.riskScore+"/100");setCachedText("targetDistance",t.targetDistance+"m");setCachedText("riskVisibility",t.visibility+"m");setCachedText("riskMeta",t.testRecordId+" · "+testRecordFrameText());
-  if(shouldRun("homeCharts",8000,force))renderCharts(Object.assign({},t,{visibility:w.visibility||t.visibility}),trip);
+  setCachedText("heroRtk",t.rtkOk?t.accuracy+"m":"异常");setCachedText("heroCan",t.canOk?"正常":"异常");setCachedText("heroDevice",v.deviceId+" "+(t.netOk?"在线":"异常"));setCachedText("heroNet",t.networkDelay+"ms");setCachedText("heroScore",safe);setCachedText("heroState",ui.safe);setCachedText("heroReason",t.reason);setCachedText("heroUpdate",testRecordFrameText());setCachedText("chipDevice",t.netOk?"设备在线":"设备异常");setCachedText("chipCan",t.canOk?"CAN正常":"CAN异常");setCachedText("chipRtk",t.rtkOk?"RTK FIX":"定位异常");setCachedText("chipNet",t.netOk?"5G在线":"通信异常");setCachedText("metricHealth",(o.health||96)+"%");setCachedText("metricKm",v.todayKm+"km");setCachedText("metricRoute",v.site.replace("重庆永川 · ",""));const w=currentWeather(v);setCachedText("metricWeather",w.icon+" "+w.text+" "+w.temp+"℃");setCachedText("metricVisibility","湿度 "+w.humidity+"% · "+weatherForecastText(w));setCachedText("metricWeatherSource",weatherSourceLabel(w));const weatherSourceEl=$("metricWeatherSource");if(weatherSourceEl)weatherSourceEl.classList.toggle("weather-live",!!w.live);setCachedText("metricNetwork",t.netOk?"5G":"异常");setCachedText("metricLatency","延迟 "+t.networkDelay+"ms");setCachedText("sceneMapText","已行驶 "+t.routeDoneKm+" / "+v.routeKm+"km");setCachedText("sceneTripText","安全评分 "+trip.score+" · 预警 "+trip.alerts+" 次");setCachedText("riskTitle",t.riskLevel==="正常"?"车辆状态稳定，无需处理":t.reason);setCachedText("riskLevel",t.riskLevel);$("riskLevel").style.color=ui.color;$("riskPanel").querySelector(".risk-edge").style.background=ui.color;setCachedText("riskScore",t.riskScore+"/100");setCachedText("targetDistance",t.targetDistance+"m");setCachedText("riskVisibility",t.visibility+"m");setCachedText("riskMeta",t.testRecordId+" · "+testRecordFrameText());
+  if(shouldRun("homeCharts",8000,force))renderCharts(t,trip);
   renderTimeline(force);renderNotifications(force)
 }
 function renderTimeline(force=false){const arr=state.data?.timeline?.[state.current]||[],sig=state.current+"|"+arr.map(x=>x.time+x.level+x.title+x.detail).join("|");if(!force&&perfState.cache.timeline===sig)return;perfState.cache.timeline=sig;$("timeline").innerHTML=arr.slice(0,5).map(x=>`<article class="${x.level==="danger"?"danger":x.level==="warn"?"warn":""}"><time>${esc(x.time)}</time><div><b>${esc(x.title)}</b><p>${esc(x.detail)}</p></div></article>`).join("")}
@@ -2740,9 +2760,9 @@ function paintDrivePlayer(player, dt, now) {
     const heading = driveMotion.dom.online;
     if (heading) heading.style.transform = `rotate(${player.heading * 180 / Math.PI}deg)`;
     if (now - driveMotion.lastTrail >= 250 && state.donePolyline) {
-      if (!track.amapPoints) track.amapPoints = track.points.map(p => new AMap.LngLat(p.position[0], p.position[1]));
-      const prefix = track.amapPoints.slice(0, point.index + 1);
-      prefix.push(new AMap.LngLat(point.position[0], point.position[1]));
+      if (!track.mapPoints) track.mapPoints = track.points.map(p => p.position);
+      const prefix = track.mapPoints.slice(0, point.index + 1);
+      prefix.push(point.position);
       state.donePolyline.setPath(prefix); driveMotion.lastTrail = now;
     }
   } else {
@@ -2798,7 +2818,7 @@ function applyLocalRoute(route,progress){
   const bases={taxi:$("mapBaseTaxi"),bus:$("mapBaseBus"),van:$("mapBaseVan")};
   Object.keys(bases).forEach(k=>{if(bases[k])bases[k].style.display=k===route.variant?"block":"none"});
   setCachedText("localRouteTitle",route.title);
-  setCachedText("localRouteMeta","打开即显示完整路线");
+  setCachedText("localRouteMeta","本地测试路线示意 · 非真实道路轨迹");
   setCachedText("localRouteName",route.title);
   const ids=["localRouteRoadShadow","localRouteRoad","routePlan","routeDone"];
   ids.forEach(id=>{
@@ -2831,71 +2851,12 @@ function setRoadRouteState(kind,title,detail){
   if(stateText)stateText.textContent=title;
   if(name)name.textContent=detail||routeNow().title;
 }
-function routeCacheKey(id){return "zls_road_matched_v50_"+id}
-function readRoadCache(id){try{const raw=localStorage.getItem(routeCacheKey(id));if(!raw)return null;const obj=JSON.parse(raw);return Array.isArray(obj.path)&&obj.path.length>2?obj:null}catch{return null}}
-function saveRoadCache(id,path){try{localStorage.setItem(routeCacheKey(id),JSON.stringify({savedAt:new Date().toISOString(),path}))}catch{}}
-function flattenDrivingPath(result){
-  const steps=result?.routes?.[0]?.steps||[],out=[];
-  steps.forEach(step=>(step.path||[]).forEach(p=>{const pt=[Number(p.lng??p.getLng?.()),Number(p.lat??p.getLat?.())];if(Number.isFinite(pt[0])&&Number.isFinite(pt[1])){const last=out[out.length-1];if(!last||Math.abs(last[0]-pt[0])>1e-8||Math.abs(last[1]-pt[1])>1e-8)out.push(pt)}}));
-  return out;
-}
-function clearRoadOverlays(){
-  if(!state.map)return;
-  (state.localOverlays||[]).forEach(o=>{try{state.map.remove(o)}catch{}});
-  state.localOverlays=[];state.planPolyline=null;state.donePolyline=null;state.mapMarker=null;state.roadPath=null;
-}
 function eventMarkerContent(color,text){return `<div style="display:flex;align-items:center;gap:8px"><div style="width:17px;height:17px;border-radius:50%;background:${color};border:4px solid #fff;box-shadow:0 5px 18px rgba(0,0,0,.18)"></div><div style="padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.97);border:1px solid #dce6ef;color:#1f2b38;font-size:12px;font-weight:750;white-space:nowrap;box-shadow:0 8px 20px rgba(23,38,50,.13)">${text}</div></div>`}
 function routeFitPadding(){
   const drawer=$("vehicleDrawer"),map=$("map");
   const bottom=drawer?drawer.getBoundingClientRect().height+24:210;
   const available=map?map.clientHeight:650;
   return [145,46,Math.min(bottom,available*.56),46];
-}
-function fitCurrentRoadRoute(){
-  if(state.map&&state.localOverlays?.length){
-    try{state.map.setFitView(state.localOverlays,false,routeFitPadding())}catch{}
-  }else if(state.map){
-    state.map.setZoomAndCenter(routeNow().zoom,routeNow().center)
-  }
-}
-function drawMatchedRoadRoute(path,source){
-  if(!state.map||!window.AMap||!Array.isArray(path)||path.length<3)return;
-  clearRoadOverlays();
-  state.localRouteId=state.current;state.roadPath=path;
-  const t=tNow(),fraction=driveExistingFraction(state.current,t.progress),route=routeNow(),lngPath=path.map(p=>new AMap.LngLat(p[0],p[1]));
-  state.planPolyline=new AMap.Polyline({path:lngPath,strokeColor:"#2476f3",strokeWeight:9,strokeOpacity:1,lineJoin:"round",lineCap:"round",isOutline:true,outlineColor:"#ffffff",borderWeight:6,zIndex:50});
-  state.donePolyline=new AMap.Polyline({path:localPathSlice(path,fraction).map(p=>new AMap.LngLat(p[0],p[1])),strokeColor:"#08b77a",strokeWeight:11,strokeOpacity:1,lineJoin:"round",lineCap:"round",isOutline:true,outlineColor:"#ffffff",borderWeight:6,zIndex:55});
-  const car=localPoint(path,fraction);
-  state.mapMarker=new AMap.Marker({position:car,zIndex:80,offset:new AMap.Pixel(-18,-35),content:driveOnlineMarkerContent()});
-  state.map.add([state.planPolyline,state.donePolyline,state.mapMarker]);state.localOverlays.push(state.planPolyline,state.donePolyline,state.mapMarker);
-  const levels=["normal","warn","danger"],fracs=route.eventFracs||[.30,.60,.82];
-  fracs.forEach((f,i)=>{const pos=localPoint(path,f),m=new AMap.Marker({position:pos,zIndex:70,offset:new AMap.Pixel(-8,-8),content:eventMarkerContent(markerColor(levels[i]),route.events[i])});state.map.add(m);state.localOverlays.push(m)});
-  showOnlineMapMode();
-  setTimeout(()=>{state.map?.resize();fitCurrentRoadRoute()},80);
-  $("fallbackMap").style.display="none";
-  setRoadRouteState("ok",source==="cache"?"已读取真实道路缓存":"真实道路路线已匹配",route.title);
-  syncDriveMotion();
-}
-function updateRoadProgress(){ syncDriveMotion(); }
-function routeAnchors(route){
-  const p=route.localPath||[];if(p.length<4)return{start:p[0],end:p[p.length-1],waypoints:[]};
-  const ids=[Math.floor((p.length-1)*.25),Math.floor((p.length-1)*.50),Math.floor((p.length-1)*.75)];
-  return{start:p[0],end:p[p.length-1],waypoints:ids.map(i=>p[i])};
-}
-function requestRoadMatchedRoute(force=false){
-  const route=routeNow(),requestId=state.current+"_"+Date.now();state.routeRequestId=requestId;
-  if(!state.map||!window.AMap){$("fallbackMap").style.display="block";setRoadRouteState("bad","等待真实地图服务",route.title);return}
-  if(!force){const cached=readRoadCache(state.current);if(cached){drawMatchedRoadRoute(cached.path,"cache");return}}
-  if(!window.AMap.Driving){setRoadRouteState("bad","驾车规划服务未加载",route.title);return}
-  setRoadRouteState("sync","正在匹配真实道路",route.title);
-  const a=routeAnchors(route),driving=new AMap.Driving({policy:AMap.DrivingPolicy?.LEAST_TIME||0,hideMarkers:true,showTraffic:false,autoFitView:false});
-  const start=new AMap.LngLat(a.start[0],a.start[1]),end=new AMap.LngLat(a.end[0],a.end[1]),waypoints=a.waypoints.map(p=>new AMap.LngLat(p[0],p[1]));
-  driving.search(start,end,{waypoints},(status,result)=>{
-    if(state.routeRequestId!==requestId)return;
-    const path=status==="complete"?flattenDrivingPath(result):[];
-    if(path.length>2){saveRoadCache(state.current,path);drawMatchedRoadRoute(path,"online")}
-    else{clearRoadOverlays();applyLocalRoute(route,tNow().progress);enterStableLocalMapMode(route.title);setRoadRouteState("bad","在线道路匹配失败","已保留完整稳定路线");toast("在线道路暂不可用，已显示完整稳定路线")}
-  });
 }
 function renderMap(force=false){
   if(mapPageIsVisible()&&!state.amapLoaded&&!state.amapLoading)setTimeout(()=>loadAmap(false),40);
@@ -2908,7 +2869,7 @@ function renderMap(force=false){
     setTimeout(()=>{if(state.map&&state.amapLoaded){showOnlineMapMode();requestRoadMatchedRoute(false)}else loadAmap(false)},100)
   })}
   if(force||perfState.cache.mapVehicle!==state.current){perfState.cache.mapVehicle=state.current;applyLocalRoute(route,t.progress)}
-  setCachedText("mapWeather",w.icon+" "+w.text+" "+w.temp+"℃");setCachedText("mapVisibility","湿度 "+w.humidity+"% · 能见度 "+weatherVisibilityText(w.visibility));setCachedText("mapWeatherSource",weatherSourceLabel(w));const mapWeatherSourceEl=$("mapWeatherSource");if(mapWeatherSourceEl)mapWeatherSourceEl.classList.toggle("weather-live",!!w.live);setCachedText("drawerPlate",v.plate);setCachedText("drawerSite",v.site);setCachedText("drawerRisk",t.riskLevel);$("drawerRisk").style.color=ui.color;setCachedText("drawerRecordedSpeed",t.speed+"km/h");setCachedText("drawerAccuracy",t.accuracy+"m");setCachedText("drawerRecordProgress",t.routeDoneKm+"/"+v.routeKm+"km");setCachedText("drawerDevice",t.netOk?"在线":"异常");
+  setCachedText("mapWeather",w.icon+" "+w.text+" "+w.temp+"℃");setCachedText("mapVisibility","湿度 "+w.humidity+"% · "+weatherForecastText(w));setCachedText("mapWeatherSource",weatherSourceLabel(w));const mapWeatherSourceEl=$("mapWeatherSource");if(mapWeatherSourceEl)mapWeatherSourceEl.classList.toggle("weather-live",!!w.live);setCachedText("drawerPlate",v.plate);setCachedText("drawerSite",v.site);setCachedText("drawerRisk",t.riskLevel);$("drawerRisk").style.color=ui.color;setCachedText("drawerRecordedSpeed",t.speed+"km/h");setCachedText("drawerAccuracy",t.accuracy+"m");setCachedText("drawerRecordProgress",t.routeDoneKm+"/"+v.routeKm+"km");setCachedText("drawerDevice",t.netOk?"在线":"异常");
   setCachedText("mapRouteTitle",route.title);
   setCachedText("mapRouteScene",(v.site||"重庆永川测试道路").replace("重庆永川 · ",""));
   const mapState=mapRuntimeState();
@@ -2927,71 +2888,6 @@ function mapPageIsVisible(){const p=$("map");return !!(p&&p.classList.contains("
 function isDesktopMap(){return !!(window.matchMedia&&window.matchMedia("(min-width:760px)").matches)}
 function showPcMapStatus(kind,title,detail){const box=$("pcMapStatus");if(!box)return;box.className="pc-map-status show"+(kind==="bad"?" bad":"");$("pcMapStatusTitle").textContent=title||"在线地图连接中";$("pcMapStatusDetail").textContent=detail||""}
 function hidePcMapStatus(){const box=$("pcMapStatus");if(box)box.classList.remove("show","bad")}
-function enterStableLocalMapMode(note){
-  const fb=$("fallbackMap"),am=$("amap");
-  if(fb)fb.style.display="block";
-  if(am)am.style.visibility="hidden";
-  hidePcMapStatus();
-  setRoadRouteState("ok","本地路线稳定模式",(note||routeNow().title)+"｜无需等待在线地图");
-  state.onlineMapVisible=false;
-}
-function showOnlineMapMode(){
-  const fb=$("fallbackMap"),am=$("amap");
-  if(am)am.style.visibility="visible";
-  if(fb)fb.style.display="none";
-  hidePcMapStatus();
-  setRoadRouteState("ok","在线高德地图",routeNow().title+"｜真实道路底图");
-  state.onlineMapVisible=true;
-}
-function cleanupAmapScripts(){
-  document.getElementById("amap-loader-script")?.remove();
-  document.getElementById("amap-direct-script")?.remove();
-}
-function scheduleAmapRetry(reason){
-  if(!mapPageIsVisible()||state.amapAttempts>=3)return;
-  clearTimeout(state.amapRetryTimer);
-  const delays=[1200,2600,5200];
-  const delay=delays[Math.max(0,state.amapAttempts-1)]||5200;
-  state.amapRetryTimer=setTimeout(()=>{state.amapRetryTimer=null;loadAmap(false)},delay);
-  showPcMapStatus("bad","高德地图正在自动重连",reason+"｜本地路线保持可用");
-}
-function loadAmap(manual=false){
-  if(!CFG.amap?.enabled||!CFG.amap?.key){enterStableLocalMapMode("在线地图未配置");return}
-  if(window.AMap){state.amapLoaded=true;state.amapLoading=false;if(mapPageIsVisible())initAmap();return}
-  if(state.amapLoading)return;
-  state.amapLoading=true;state.amapLoadError="";state.amapAttempts=(state.amapAttempts||0)+1;
-  const mapPage=$("map");if(mapPage)mapPage.classList.add("amap-loading");
-  showPcMapStatus("","正在连接在线高德地图","第 "+Math.min(state.amapAttempts,3)+" 次连接｜本地路线持续可用");
-  window._AMapSecurityConfig={securityJsCode:CFG.amap.securityJsCode};
-  let settled=false;
-  const callbackName="__zlsAmapReady";
-  const finishLocal=(reason)=>{
-    if(settled)return;settled=true;clearTimeout(timer);state.amapLoaded=false;state.amapLoading=false;state.amapLoadError=reason||"LOAD_ERROR";
-    if(mapPage)mapPage.classList.remove("amap-loading");enterStableLocalMapMode(routeNow().title);scheduleAmapRetry(reason||"网络连接失败");
-    if(manual)toast("高德地图正在自动重连，本地路线仍可使用")
-  };
-  const finishOnline=()=>{
-    if(settled)return;
-    if(!window.AMap){finishLocal("EMPTY_AMAP");return}
-    settled=true;clearTimeout(timer);state.amapLoaded=true;state.amapLoading=false;state.amapAttempts=0;
-    if(mapPage){mapPage.classList.remove("amap-loading");mapPage.classList.add("amap-ready")}
-    if(mapPageIsVisible())initAmap()
-  };
-  window[callbackName]=finishOnline;
-  cleanupAmapScripts();
-  const script=document.createElement("script");script.id="amap-direct-script";script.async=true;script.defer=true;script.charset="utf-8";
-  script.src="https://webapi.amap.com/maps?v=2.0&key="+encodeURIComponent(CFG.amap.key)+"&plugin=AMap.Driving,AMap.Scale,AMap.ToolBar&callback="+callbackName+"&_="+Date.now();
-  script.onerror=()=>finishLocal("NETWORK_ERROR");document.head.appendChild(script);
-  const timer=setTimeout(()=>finishLocal("LOAD_TIMEOUT"),15000)
-}
-function initAmap(){
-  if(!window.AMap)return enterStableLocalMapMode(routeNow().title);
-  if(!mapPageIsVisible()){clearTimeout(state.amapInitTimer);state.amapInitTimer=setTimeout(initAmap,180);return}
-  const box=$("amap");if(!box||box.clientWidth<100||box.clientHeight<200){clearTimeout(state.amapInitTimer);state.amapInitTimer=setTimeout(initAmap,220);return}
-  try{
-    if(!state.map){const route=routeNow();state.map=new AMap.Map("amap",{zoom:route.zoom,center:route.center,mapStyle:"amap://styles/normal",viewMode:"2D",pitch:0,showLabel:true,features:["bg","road","building","point"],expandZoomRange:true,zooms:[3,20],resizeEnable:true});state.localOverlays=[];if(AMap.Scale)state.map.addControl(new AMap.Scale({position:"LB"}));state.map.on("complete",()=>{showOnlineMapMode();state.amapAttempts=0;setTimeout(()=>{state.map?.resize();requestRoadMatchedRoute(false)},120)});state.map.on("click",()=>setDrawerExpanded(false));state.map.on("error",(evt)=>{state.amapLoadError=(evt&&evt.info)||"MAP_ERROR";enterStableLocalMapMode(routeNow().title);scheduleAmapRetry(state.amapLoadError)});setTimeout(()=>{if(state.map&&!state.onlineMapVisible){showOnlineMapMode();requestRoadMatchedRoute(false)}},2200)}else{showOnlineMapMode();state.map.resize();updateRoadProgress()}
-  }catch(e){state.map=null;state.amapLoadError=e?.message||"INIT_ERROR";enterStableLocalMapMode(routeNow().title)}
-}
 function renderSafety(force=false){const t=tNow(),ui=riskUI(t.riskLevel),safe=Math.max(0,100-t.riskScore);setCachedText("safetyReason",t.reason);setCachedText("safetyScore",safe);setCachedText("safetyState",ui.safe);setCachedText("riskDecisionTime","记录时间 "+new Date(t.recordedAt||t.timestamp).toLocaleTimeString("zh-CN",{hour12:false}));renderRiskExplain();renderReplay(force);if(!shouldRun("safetyHeavy",5000,force))return;const th=state.data?.thresholds||{highDistance:10,lowVisibility:500};$("radarLevel").textContent=ui.en;radarChart(t,ui.color);const instruments=[["目标距离",t.targetDistance,30,th.highDistance+"m 高风险阈值","m"],["能见度",Math.min(t.visibility,1000),1000,th.lowVisibility+"m 安全阈值","m"],["车辆速度",t.speed,60,"山地建议 ≤ 30km/h","km/h"],["定位精度",Math.max(.01,1-t.accuracy/3),1,t.accuracy+"m / RTK FIX",""],["CAN数据",t.canOk?1:.2,1,t.canOk?"只读监听正常":"报文异常",""],["通信延迟",Math.max(0,1-t.networkDelay/600),1,t.networkDelay+"ms",""]];$("instruments").innerHTML=instruments.map((x,i)=>`<article class="instrument"><small>${esc(x[0])}</small><b>${i<3?esc(Number(x[1]).toFixed(i===0?1:0)+x[4]):esc(x[3].split(" / ")[0])}</b><canvas data-inst="${i}"></canvas><em>${esc(x[3])}</em></article>`).join("");document.querySelectorAll("[data-inst]").forEach((c,i)=>gaugeChart(c,Math.max(0,Math.min(1,Number(instruments[i][1])/Number(instruments[i][2]))),i===0&&t.targetDistance<th.highDistance?"#ed4a55":i===1&&t.visibility<th.lowVisibility?"#ff9f43":"#35c58b"));const adv=[];if(t.riskLevel==="正常")adv.push(["持续监测","车辆、设备、定位和通信状态稳定。",""]);if(t.visibility<th.lowVisibility)adv.push(["降低测试速度","低能见度环境建议降低山地弯道测试速度。","warn"]);if(t.targetDistance<th.highDistance)adv.push(["复核前方目标","目标距离低于高风险阈值，建议现场复核并生成工单。","warn"]);if(!t.canOk||!t.rtkOk||!t.netOk)adv.push(["检查设备链路","建议检查车辆接口、定位天线和通信模块。","warn"]);adv.push(["保留证据链","系统已记录时间戳、规则版本、模型版本和事件快照。",""]);$("adviceList").innerHTML=adv.map(a=>`<article class="${a[2]}"><b>${esc(a[0])}</b><p>${esc(a[1])}</p></article>`).join("");renderCheck();renderWorkOrders()}
 function renderRiskExplain(){
   const t=tNow(),record=testRecordNow(),th=state.data?.thresholds||{highDistance:10,mediumDistance:20,lowVisibility:500,ttcLevel2:3,ttcLevel3:1.8};
@@ -3086,8 +2982,8 @@ function diagnosticSnapshot(){
     {key:"login",name:"访问状态",status:document.body.classList.contains("platform-ready")?"ok":"bad",value:document.body.classList.contains("platform-ready")?"已进入平台":"未进入",detail:state.user?.username||"尚未进入"},
     {key:"data",name:"设备数据",status:trust.level==="realtime"?"ok":trust.level==="delayed"?"warn":"bad",value:trust.label,detail:trust.source+" · "+(trust.age<=1?"刚刚":trust.age+"秒前")},
     {key:"map",name:"地图服务",status:mapState.level==="online"?"ok":mapState.level==="warn"?"warn":"bad",value:mapState.label,detail:mapState.detail},
-    {key:"weather",name:"天气服务",status:w.live?"ok":"warn",value:w.live?"实时天气":"本地兜底",detail:(w.text||"--")+" · "+(w.observedAt||"缓存数据")},
-    {key:"browser",name:"运行环境",status:fileMode?"warn":"ok",value:window.ZLS_APP?.native?"安卓 APP":fileMode?"本地文件":"HTTPS网页",detail:window.ZLS_APP?.native?"内置页面与本地路线":fileMode?"file:// 模式可能限制高德在线地图":location.hostname||"本地环境"},
+    {key:"weather",name:"天气服务",status:w.live?"ok":"warn",value:weatherStatusText(w),detail:weatherSourceLabel(w)},
+    {key:"browser",name:"运行环境",status:fileMode?"warn":"ok",value:window.ZLS_APP?.native?"安卓 APP":fileMode?"本地文件":"HTTPS网页",detail:window.ZLS_APP?.native?"内置页面与本地路线":fileMode?"file:// 模式不能提供在线地图所需的网页来源":location.hostname||"本地环境"},
     {key:"cache",name:"缓存版本",status:"ok",value:"APP 1.1.0",detail:ZLS_VERSION}
   ];
   const score=Math.max(0,100-checks.filter(x=>x.status==="warn").length*7-checks.filter(x=>x.status==="bad").length*18);
@@ -3101,7 +2997,7 @@ function renderDiagnostics(force=false){
   setCachedText("diagSummary",d.score>=90?"平台状态良好":d.score>=75?"可用，存在降级项":"需要处理异常");
   setCachedText("diagUpdated","检测于 "+new Date(d.createdAt).toLocaleTimeString("zh-CN",{hour12:false}));
   if(grid)grid.innerHTML=d.checks.map(x=>`<div class="diagnostic-item ${x.status}"><i>${x.status==="ok"?"✓":x.status==="warn"?"!":"×"}</i><div><b>${esc(x.name)}</b><p>${esc(x.detail)}</p></div><em>${esc(x.value)}</em></div>`).join("");
-  const note=window.ZLS_APP?.native?"当前为安卓应用；内置测试记录与路线可离线查看，在线地图、天气和设备服务需要网络。":d.fileMode?"当前通过 file:// 本地文件打开：稳定路线与本地数据可正常使用；高德在线地图应部署到 GitHub Pages 后验证域名白名单。":"当前为网页部署环境，外部地图与天气服务可按配置正常连接。";
+  const note=window.ZLS_APP?.native?"当前为安卓应用；内置测试记录与路线可离线查看，在线地图、天气和设备服务需要网络。":d.fileMode?"当前通过 file:// 本地文件打开：稳定路线与本地数据可正常使用；在线地图应通过 HTTPS 网页访问。":"当前为网页部署环境，外部地图与天气服务可按配置正常连接。";
   setCachedText("diagnosticNote",note)
 }
 async function clearLegacyCache(){
@@ -3171,7 +3067,7 @@ if($("fallbackMap"))$("fallbackMap").addEventListener("click",e=>{
   if(!e.target.closest?.(".route-event-box"))setDrawerExpanded(false)
 });
 if($("mapZoomIn"))$("mapZoomIn").onclick=()=>{
-  if(state.map&&state.onlineMapVisible)state.map.zoomIn();else toast("在线高德地图加载后可缩放")
+  if(state.map&&state.onlineMapVisible)state.map.zoomIn();else toast("在线道路地图加载后可缩放")
 };
 if($("mapZoomOut"))$("mapZoomOut").onclick=()=>{
   if(state.map&&state.onlineMapVisible)state.map.zoomOut();else toast("稳定路线已按完整范围显示")
@@ -3186,8 +3082,8 @@ if($("copyDiagnostics"))$("copyDiagnostics").onclick=copyDiagnosticInfo;
 if($("clearLegacyCache"))$("clearLegacyCache").onclick=clearLegacyCache;
 $("notificationBtn").onclick=()=>$("notifyOverlay").classList.add("show");$("closeNotify").onclick=()=>$("notifyOverlay").classList.remove("show");$("notifyOverlay").onclick=e=>{if(e.target===$("notifyOverlay"))$("notifyOverlay").classList.remove("show")};$("sheetOverlay").onclick=e=>{if(e.target===$("sheetOverlay"))$("sheetOverlay").classList.remove("show")};$("switchVehicle").onclick=showFleetPicker;$("openTimeline").onclick=()=>openSheet("timeline");$("quickWorkOrder").onclick=createWo;$("createWo").onclick=createWo;$("completeWo").onclick=completeWo;$("runCheck").onclick=runSafetyCheck;$("mapLocate").onclick=()=>{if(state.map&&state.onlineMapVisible)fitCurrentRoadRoute();else applyLocalRoute(routeNow(),tNow().progress);toast("已完整显示当前路线")};$("mapLayers").onclick=()=>{
   if(state.map&&state.onlineMapVisible){enterStableLocalMapMode(routeNow().title);toast("已切换为本地路线稳定模式");return}
-  if(state.amapLoaded&&state.map){showOnlineMapMode();state.map.resize();requestRoadMatchedRoute(false);toast("已切换在线高德地图");return}
-  state.amapLoading=false;cleanupAmapScripts();loadAmap(true);toast("正在尝试连接在线高德地图")
+  if(state.amapLoaded&&state.map){showOnlineMapMode();state.map.resize();requestRoadMatchedRoute(false);toast("已切换在线道路地图");return}
+  state.amapLoading=false;cleanupAmapScripts();loadAmap(true);toast("正在尝试连接在线道路地图")
 };
 document.querySelectorAll("[data-page]").forEach(b=>b.onclick=()=>goPage(b.dataset.page));document.querySelectorAll("[data-action='health']").forEach(b=>b.onclick=runSafetyCheck);document.querySelectorAll("[data-sheet]").forEach(b=>b.onclick=()=>openSheet(b.dataset.sheet));document.querySelectorAll("[data-report]").forEach(b=>b.onclick=()=>createReport(b.dataset.report));
 let stableTickBusy=false;
@@ -3224,6 +3120,8 @@ window.addEventListener("pageshow",()=>{if(mapPageIsVisible())setTimeout(()=>loa
 
 
 </script>
+<script src="./vendor/leaflet/leaflet.js"></script>
+<script src="./online-map.js"></script>
 
 <script>
 window.addEventListener("error", function (event) {
@@ -3391,10 +3289,13 @@ window.addEventListener("unhandledrejection",function(event){
     else if(kind==="vehicle-overview")d=base("车辆运行总览","VEHICLE OVERVIEW",risk,"汇总车辆、设备、定位、通信和风险状态，形成单车运行总览。","home",[["安全评分",s.safe,"100分制"],["当前速度",num(t.speed,1)+"km/h","CAN只读采集"],["定位精度",num(t.accuracy,2)+"m","RTK FIX"],["设备状态",t.netOk?"在线":"异常",v.deviceId]], [section("车辆身份",rows([["车辆编号",v.plate],["车型",(v.brand||"")+" "+(v.model||v.type||"")],["VIN",v.vin],["测试路段",v.site]])),section("实时状态",rows([["CAN链路",t.canOk?"正常":"异常"],["RTK定位",t.rtkOk?"正常":"异常"],["5G通信",t.netOk?"在线":"异常"],["当前原因",t.reason]])),section("状态趋势",bars([s.safe-5,s.safe-2,s.safe-3,s.safe,s.safe-1,s.safe,s.safe]))],[section("数据来源与证据链",sourceRows(s)),section("最近状态窗口",table(["时间","安全评分","速度","风险"],[["当前",s.safe,num(t.speed,1)+"km/h",risk],["1分钟前",Math.max(0,s.safe-1),num(t.speed-1.2,1)+"km/h",risk],["5分钟前",Math.max(0,s.safe-3),num(t.speed+1.5,1)+"km/h","正常"],["10分钟前",Math.max(0,s.safe-2),num(t.speed-.8,1)+"km/h","正常"]]))]);
     else if(kind==="device-health"||kind==="ops-device")d=base("设备健康详情","DEVICE HEALTH",t.netOk&&t.canOk?"正常":"需要检查","展示车载安全预警盒子的供电、温度、通信、CAN监听和固件状态。",kind==="ops-device"?"ops":"home",[["综合健康",(o.health||96)+"%","供电/温度/通信"],["设备温度",num(t.deviceTemp,1)+"℃","建议 < 70℃"],["供电电压",num(t.voltage,1)+"V","低压电源"],["通信延迟",num(t.networkDelay,0)+"ms","5G链路"]],[section("设备状态",rows([["设备编号",v.deviceId],["固件版本","V1.0.7"],["CAN模式",t.canOk?"Listen-only 正常":"报文异常"],["运行模式",s.mode],["累计运行","128h"]])),section("健康判断",chain(["车辆低压电源为模块持续供电","设备以Listen-only方式读取CAN状态数据","RTK与通信模块同步车辆位置和环境数据","健康引擎综合温度、电压、延迟与心跳状态"]))],[section("设备身份与安装",rows([["安装位置",inst.position||v.install||"副驾驶中控台内部"],["安装日期",inst.installDate||v.installDate],["安装人员",inst.installer||v.installer],["验收状态",inst.acceptance||v.acceptance],["协议库",v.protocol]])),section("温度趋势",bars([41.7,42.1,42.6,43.0,42.8,43.2,Number(t.deviceTemp||43.2)]))]);
     else if(kind==="trip"||kind==="trip-report"||kind==="trip-analytics")d=base("行程安全详情","TRIP SAFETY",trip.high>0?"存在高风险事件":"行程稳定","汇总测试路线、行驶进度、预警事件、数据完整性和安全评分。",kind==="trip-analytics"?"ops":"home",[["安全评分",trip.score,"行程综合评分"],["路线里程",trip.distance+"km",trip.duration+"分钟"],["预警事件",trip.alerts+"次","高风险 "+(trip.high||0)+"次"],["数据完整率",trip.integrity+"%","在线率 "+trip.onlineRate+"%"]],[section("路线信息",rows([["路线",trip.route],["已行驶",num(t.routeDoneKm,2)+" / "+v.routeKm+"km"],["完成进度",num(t.progress,1)+"%"],["当前天气",(w&&w.text)||v.weather],["当前位置",v.site]])),section("行程趋势",bars([88,91,93,92,94,trip.score-1,trip.score]))],[section("行程事件",table(["阶段","事件","等级","状态"],[["起点","设备上线与协议匹配","正常","已归档"],["途中","环境风险持续监测",t.visibility<th.lowVisibility?"关注":"正常","监测中"],["当前","车辆状态采样",risk,"已记录"],["终点","自动生成行程报告","待完成","自动"]])),section("报告内容",rows([["车辆",v.plate],["设备",v.deviceId],["规则版本",t.ruleVersion],["模型版本",t.modelVersion],["阈值版本",t.thresholdVersion]]))]);
-    else if(kind==="weather"||kind==="map-weather"){var wvis=Number(w.visibility||t.visibility||0),wet=String(w.text||"").indexOf("雨")>=0;d=base("实时天气风险详情","LIVE WEATHER RISK",wvis<th.lowVisibility?"低能见度关注":"环境可控","接入永川测试路段近实时天气，并与能见度、路面状态和车辆风险判断联动。",kind==="map-weather"?"map":"home",[["当前天气",(w.icon||"")+" "+w.text,w.live?"和风天气":"本地兜底"],["气温",w.temp+"℃","体感 "+w.feelsLike+"℃"],["湿度",w.humidity+"%",(w.windDir||"--")+"风 "+(w.windScale||"--")+"级"],["能见度",weatherVisibilityText(wvis),"阈值 "+th.lowVisibility+"m"]],[section("实时观测",rows([["数据状态",w.live?"实时天气已连接":"使用场景兜底"],["观测时间",weatherTimeText(w)],["降水量",w.precip+"mm"],["气压",w.pressure+"hPa"],["数据位置",v.site]])),section("环境影响",rows([["摄像头识别",wvis<th.lowVisibility?"可靠性下降":"正常"],["车道线识别",wet?"需持续复核":"正常"],["制动距离",wet?"可能增加":"正常"],["障碍物置信度",wvis<th.lowVisibility?"下降":"稳定"]])),section("风险链路",chain([w.text+"导致道路环境发生变化","近实时能见度与路面状态进入风险规则","系统与车辆速度、目标距离联合判断","生成分级预警并保留天气观测时间"]))],[section("能见度趋势",bars([wvis+80,wvis+50,wvis+20,Math.max(0,wvis-15),Math.max(0,wvis-30),wvis+10,wvis])),section("处置建议",rows([["速度建议",wvis<th.lowVisibility?"降低测试速度":"保持当前策略"],["传感器建议","持续复核摄像头与定位数据"],["刷新策略","每10分钟自动更新，重新进入页面时复核"],["服务来源",weatherSourceLabel(w)]]))]);}
+    else if(kind==="weather"||kind==="map-weather"){
+      var knownVisibility=window.ZLSWeather.number(w.visibility),status=weatherStatusText(w);
+      d=base("在线天气详情","ONLINE WEATHER",status,"查看测试路段附近的天气模型数据。能见度为小时预报；在线天气仅供参考，安全预警继续使用原项目测试记录。",kind==="map-weather"?"map":"home",[["当前天气",(w.icon||"")+" "+w.text,"Open-Meteo 当前模型"],["气温",w.temp+"℃","体感 "+w.feelsLike+"℃"],["相对湿度",w.humidity+"%",(w.windDir||"--")+"风 · "+w.windSpeed+"km/h"],["能见度",weatherVisibilityText(knownVisibility),"小时预报，非现场测量"]],[section("来源与时效",weatherAttributionHtml()+rows([["服务状态",status],["模型有效时间",weatherTimeText(w)],["数据获取时间",w.updatedAt?window.ZLSWeather.timeText(w.updatedAt,true)+"（北京时间）":"--"],["能见度预报时刻",w.visibilityTime?window.ZLSWeather.timeText(w.visibilityTime,true)+"（北京时间）":"未提供"],["位置",v.site]])),section("当前模型条件",rows([["风速",w.windSpeed+"km/h"],["风向",w.windDir||"--"],["降水量",w.precip+"mm（前"+(w.precipInterval?Math.round(w.precipInterval/60):"--")+"分钟）"],["海平面气压",w.pressure+"hPa"]])),section("使用说明",rows([["当前天气","来自天气模型，不是车载传感器实测"],["能见度","对应所列整点的小时预报"],["安全预警","仍使用原项目测试记录，在线天气不替换风险输入"],["更新策略","每10分钟刷新；网络异常显示缓存状态"]]))],[section("数据来源",weatherAttributionHtml()+rows([["当前来源",weatherSourceLabel(w)],["缺失数据","显示 --，不替换为 0"]]))]);
+    }
     else if(kind==="network")d=base("网络链路详情","NETWORK LINK",t.netOk?"在线":"通信异常","显示5G通信、心跳、服务器接收延迟与降级运行能力。","home",[["网络状态",t.netOk?"5G在线":"异常","设备心跳"],["链路延迟",num(t.networkDelay,0)+"ms","当前往返"],["最后心跳","2秒前",v.deviceId],["降级能力","可用","本地稳定模式"]],[section("链路检查",rows([["设备心跳",t.netOk?"正常":"超时"],["服务端接收","正常"],["SSE实时流",typeof state!=="undefined"&&state.stream?"在线":"本地数据"],["断网策略","保留本地路线与安全数据"]])),section("延迟趋势",bars([56,49,51,46,44,48,t.networkDelay]))],[section("通信证据",sourceRows(s)),section("异常处理",chain(["检测设备心跳与数据接收时间","通信延迟超过阈值时标记异常","切换本地稳定模式继续展示关键数据","网络恢复后重新建立实时连接"]))]);
     else if(kind==="inspection"||kind==="scan")d=base("一键安全体检详情","SMART INSPECTION","可执行","按硬件、车辆数据、定位通信、算法服务四阶段完成系统自检。",kind==="scan"?"safety":"home",[["检查阶段","4项","自动执行"],["预计用时","8秒","分阶段扫描"],["当前设备",v.deviceId,v.plate],["安全边界","只读","不发送控制指令"]],[section("体检流程",chain(["检查设备供电、温度与存储状态","检查CAN报文读取和车型协议匹配","检查RTK定位、5G通信与时间同步","检查风险规则、模型版本与阈值配置"])),section("当前检查项",rows([["硬件状态",t.voltage>11?"通过":"异常"],["CAN监听",t.canOk?"通过":"异常"],["RTK定位",t.rtkOk?"通过":"异常"],["算法服务","通过"]]))],[section("检查结果记录",table(["检查项","当前值","标准","结果"],[["供电",num(t.voltage,1)+"V","11–28V","通过"],["温度",num(t.deviceTemp,1)+"℃","<70℃","通过"],["定位",num(t.accuracy,2)+"m","≤0.5m",t.rtkOk?"通过":"异常"],["延迟",num(t.networkDelay,0)+"ms","<200ms",t.netOk?"通过":"异常"]])),section("输出内容",rows([["体检结论","安全状态与异常项"],["证据记录","时间戳、设备、规则与模型版本"],["后续动作","生成工单或继续运行"]]))]);
-    else if(kind==="position"||kind==="map-route")d=base("实时路线详情","REALTIME ROUTE","路线可用","展示当前测试道路、已行驶路段、计划路线与风险事件点。","map",[["路线",(v.site||"").replace("重庆永川 · ",""),"永川测试场景"],["已行驶",num(t.routeDoneKm,2)+"km","总长 "+v.routeKm+"km"],["路线进度",num(t.progress,1)+"%","实时更新"],["定位精度",num(t.accuracy,2)+"m","RTK-GNSS"]],[section("路线状态",rows([["地图模式","本地路线稳定模式"],["在线地图","手动连接高德地图"],["当前速度",num(t.speed,1)+"km/h"],["当前风险",risk],["天气",(w&&w.text)||v.weather]])),section("路线事件",chain(["车辆进入永川测试路段","系统按RTK位置更新行驶进度","风险点与车辆位置使用同一路线坐标","在线地图不可用时保留本地路线展示"]))],[section("路线节点",table(["节点","类型","状态","说明"],[["起点","设备上线","完成","心跳与协议匹配"],["检测点","道路检测","完成","CAN与定位持续记录"],["风险点","环境关注",risk,"目标距离/能见度联合判断"],["终点","报告生成","待完成","完成后归档"]])),section("定位来源",sourceRows(s))]);
+    else if(kind==="position"||kind==="map-route")d=base("实时路线详情","REALTIME ROUTE","路线可用","展示当前测试道路、已行驶路段、计划路线与风险事件点。","map",[["路线",(v.site||"").replace("重庆永川 · ",""),"永川测试场景"],["已行驶",num(t.routeDoneKm,2)+"km","总长 "+v.routeKm+"km"],["路线进度",num(t.progress,1)+"%","实时更新"],["定位精度",num(t.accuracy,2)+"m","RTK-GNSS"]],[section("路线状态",rows([["地图模式",mapRuntimeState().label],["在线地图","OpenStreetMap / OSRM道路规划"],["当前速度",num(t.speed,1)+"km/h"],["当前风险",risk],["天气",(w&&w.text)||v.weather]])),section("路线事件",chain(["车辆进入永川测试路段","按当前设备轨迹或测试预览更新进度","风险点与车辆位置使用同一路线坐标","在线地图不可用时显示明确标注的本地测试示意"]))],[section("路线节点",table(["节点","类型","状态","说明"],[["起点","设备上线","完成","心跳与协议匹配"],["检测点","道路检测","完成","CAN与定位持续记录"],["风险点","环境关注",risk,"目标距离/能见度联合判断"],["终点","报告生成","待完成","完成后归档"]])),section("定位来源",sourceRows(s))]);
     else if(kind==="risk"||kind==="safety-overview"||kind==="safety-radar")d=base("风险判断详情","RISK DIAGNOSIS",risk,"说明当前风险是如何由车辆、环境、目标距离和设备状态共同判断出来的。","safety",[["风险等级",risk,t.reason],["风险评分",num(t.riskScore,0)+"/100","越高风险越大"],["目标距离",num(t.targetDistance,1)+"m","高风险阈值 "+th.highDistance+"m"],["能见度",num(t.visibility,0)+"m","安全阈值 "+th.lowVisibility+"m"]],[section("判断链路",chain(["读取CAN车速、车辆状态与设备心跳","融合RTK位置、目标距离和天气能见度","按照阈值规则计算风险评分","输出正常/中风险/高风险三级预警"])),section("阈值对比",rows([["目标距离",num(t.targetDistance,1)+"m / 高风险 < "+th.highDistance+"m"],["能见度",num(t.visibility,0)+"m / 关注 < "+th.lowVisibility+"m"],["车速",num(t.speed,1)+"km/h / 山地建议 ≤30km/h"],["通信延迟",num(t.networkDelay,0)+"ms / 建议 <200ms"]]))],[section("规则证据",rows([["触发原因",t.reason],["规则版本",t.ruleVersion],["模型版本",t.modelVersion],["阈值版本",t.thresholdVersion],["数据质量",t.quality||"实时"]])),section("评分变化",bars([Math.max(5,t.riskScore-12),Math.max(5,t.riskScore-8),Math.max(5,t.riskScore-4),t.riskScore+3,t.riskScore-2,t.riskScore,t.riskScore]))]);
     else if(kind==="map-vehicle")d=base("地图车辆详情","VEHICLE ON MAP",risk,"从地图对象进入车辆、轨迹、预警和设备档案。","map",[["车辆",v.plate,v.type],["当前速度",num(t.speed,1)+"km/h",v.site],["定位精度",num(t.accuracy,2)+"m","RTK FIX"],["设备",t.netOk?"在线":"异常",v.deviceId]],[section("车辆信息",rows([["品牌车型",(v.brand||"")+" "+v.model],["VIN",v.vin],["安装位置",v.install],["协议库",v.protocol]])),section("地图状态",rows([["行驶进度",num(t.routeDoneKm,2)+" / "+v.routeKm+"km"],["风险等级",risk],["当前天气",(w&&w.text)||v.weather],["最后更新","2秒前"]]))],[section("车辆关联入口",chain(["查看当前路线与风险点","进入安全诊断查看判断依据","进入设备档案查看安装和接线","生成行程与预警事件报告"])),section("实时数据",sourceRows(s))]);
     else if(kind==="safety-instrument"){
@@ -3460,7 +3361,7 @@ window.addEventListener("unhandledrejection",function(event){
     if(fam==="vehicle"){var src=firstImg("#vehicleImage");return '<div class="zls-car-viz">'+(src?'<img src="'+h(src)+'" alt="车辆运行状态">':'')+'<div class="zls-car-road"></div><div class="zls-car-tags"><span>CAN '+(t.canOk?"正常":"异常")+'</span><span>RTK '+(t.rtkOk?"FIX":"异常")+'</span><span>5G '+(t.netOk?"在线":"异常")+'</span></div></div>'}
     if(fam==="device")return '<div class="zls-device-viz"><div class="zls-device-box"><div class="zls-device-led"></div><div class="zls-device-ports"><i></i><i></i></div></div><div class="zls-device-cables"><i></i><i></i><i></i><i></i></div><div class="zls-device-labels"><span>12V/24V</span><span>CAN Listen-only</span><span>RTK</span><span>5G</span></div></div>';
     if(fam==="journey")return '<div class="zls-route-viz"><div class="zls-route-track"><i style="width:'+Math.max(8,Math.min(100,Number(t.progress||72)))+'%"></i></div><div class="zls-route-nodes"><span></span><span></span><span></span><span></span></div><div class="zls-route-labels"><b>起点</b><b>环境监测</b><b>当前位置</b><b>终点</b></div></div>';
-    if(fam==="weather")return '<div class="zls-weather-viz"><div class="zls-weather-icon">'+h(w.icon||"🌦️")+'</div><div class="zls-weather-temp"><b>'+h(w.temp||"--")+'°</b><span>'+h(w.text||"天气数据")+'</span><div class="zls-weather-orbits"><i>湿度 '+h(w.humidity||"--")+'%</i><i>能见度 '+h(w.visibility||t.visibility||"--")+'m</i><i>'+h(w.windDir||"--")+'风</i><i>'+h(w.windScale||"--")+'级</i></div></div></div>';
+    if(fam==="weather")return '<div class="zls-weather-viz"><div class="zls-weather-icon">'+h(w.icon||"🌦️")+'</div><div class="zls-weather-temp"><b>'+h(w.temp??"--")+'°</b><span>'+h(w.text||"天气数据")+'</span><div class="zls-weather-orbits"><i>湿度 '+h(w.humidity??"--")+'%</i><i>小时预报能见度 '+h(weatherVisibilityText(w.visibility))+'</i><i>'+h(w.windDir||"--")+'风</i><i>'+h(w.windSpeed??"--")+'km/h</i></div></div></div>';
     if(fam==="route")return '<div class="zls-route-map-viz"><div class="zls-route-map-line"><i class="p1"></i><i class="p2"></i><i class="p3"></i><i class="p4"></i></div><div class="zls-route-map-car">●</div><div class="zls-route-map-labels"><span>起点</span><span>风险点</span><span>当前位置</span><span>终点</span></div></div>';
     if(fam==="protocol")return '<div class="zls-protocol-viz"><div class="zls-protocol-source">车型CAN</div><i>→</i><div class="zls-protocol-packets"><span>0x180</span><span>0x2A1</span><span>0x3C0</span></div><i>→</i><div class="zls-protocol-output">标准信号</div></div>';
     if(fam==="ota")return '<div class="zls-ota-viz"><div class="zls-ota-cloud">OTA</div><div class="zls-ota-arrow">↓</div><div class="zls-ota-device"><b>V1.0.7</b><span>签名校验 · 灰度 · 回滚</span></div></div>';

@@ -1,0 +1,10 @@
+/* The attribution strip stays above the drawer, including its expanded state. */
+.map-page .online-map-info{position:absolute;z-index:16;left:10px;right:10px;bottom:calc(var(--drive-drawer-size,204px) + 17px);display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.map-page .online-map-status,.map-page .online-map-attribution{align-self:flex-start;max-width:100%;box-sizing:border-box;border:1px solid #d5e0e8;border-radius:9px;background:rgba(255,255,255,.97);color:#263746;padding:5px 8px;font-size:11px;line-height:1.45;pointer-events:auto}
+.map-page .online-map-status{display:flex;align-items:center;gap:8px}.online-map-status span{min-width:0}.online-map-status button{border:0;background:#e9f0ff;color:#164d9a;border-radius:6px;padding:5px 7px;white-space:nowrap;font:inherit;font-weight:700;cursor:pointer}
+.map-page .online-map-attribution a{color:#164d9a;text-decoration:underline;white-space:nowrap}.map-page .online-map-attribution[hidden]{display:none}
+.map-page .map-legend{bottom:calc(var(--drive-drawer-size,204px) + 92px)!important}
+.map-page .vehicle-drawer.expanded{max-height:calc(100% - 245px)!important}
+.map-page #amap.leaflet-container{font-family:inherit;background:#e6edf0}.map-page .leaflet-container img.leaflet-tile{max-width:none!important;max-height:none!important}
+.zls-leaflet-car,.zls-leaflet-event{background:transparent;border:0}.zls-leaflet-car #onlineCarHeading{transform-origin:50% 50%}
+.map-page .leaflet-pane{z-index:1}.map-page .leaflet-tile-pane{z-index:1}.map-page .leaflet-overlay-pane{z-index:2}.map-page .leaflet-marker-pane{z-index:4}.map-page .leaflet-tooltip-pane{z-index:5}.map-page .leaflet-popup-pane{z-index:6}
