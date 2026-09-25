@@ -1782,7 +1782,7 @@ small { font-size: 12px; }
     <div class="vehicle-tabs" id="vehicleTabs"></div>
   </div>
   <div class="map-controls" aria-label="地图控制">
-    <button id="mapLayers" title="切换在线道路地图与稳定路线"><svg><use href="#i-layers"/></svg></button>
+    <button id="mapLayers" title="重新连接在线地图"><svg><use href="#i-layers"/></svg></button>
     <button id="mapLocate" title="完整显示当前路线"><svg><use href="#i-location"/></svg></button>
     <button id="mapZoomIn" title="放大地图" aria-label="放大地图">＋</button>
     <button id="mapZoomOut" title="缩小地图" aria-label="缩小地图">－</button>
@@ -2427,7 +2427,7 @@ function selectFleetVehicle(id) {
     enterStableLocalMapMode(route.title);
     const drawer = $("vehicleDrawer");
     if (drawer) { drawer.classList.add("collapsed"); drawer.classList.remove("expanded"); }
-    if (state.map && state.amapLoaded) { showOnlineMapMode(); requestRoadMatchedRoute(false); }
+    loadAmap(false);
   }
   // Refresh the shared artwork even when the picker is opened on another page.
   renderVehiclePresentation();
@@ -2876,7 +2876,7 @@ function renderMap(force=false){
     const route=routeNow();applyLocalRoute(route,tNow().progress);enterStableLocalMapMode(route.title);
     const drawer=$("vehicleDrawer");if(drawer){drawer.classList.add("collapsed");drawer.classList.remove("expanded")}
     scheduleActiveRender(0,true);fetchRealtimeWeather(true);
-    setTimeout(()=>{if(state.map&&state.amapLoaded){showOnlineMapMode();requestRoadMatchedRoute(false)}else loadAmap(false)},100)
+    setTimeout(()=>loadAmap(false),100)
   })}
   if(force||perfState.cache.mapVehicle!==state.current){perfState.cache.mapVehicle=state.current;applyLocalRoute(route,t.progress)}
   setCachedText("mapWeather",w.icon+" "+w.text+" "+w.temp+"℃");setCachedText("mapVisibility","湿度 "+w.humidity+"% · "+weatherForecastText(w));setCachedText("mapWeatherSource",weatherSourceLabel(w));const mapWeatherSourceEl=$("mapWeatherSource");if(mapWeatherSourceEl)mapWeatherSourceEl.classList.toggle("weather-live",!!w.live);setCachedText("drawerPlate",v.plate);setCachedText("drawerSite",v.site);setCachedText("drawerRisk",t.riskLevel);$("drawerRisk").style.color=ui.color;setCachedText("drawerRecordedSpeed",t.speed+"km/h");setCachedText("drawerAccuracy",t.accuracy+"m");setCachedText("drawerRecordProgress",t.routeDoneKm+"/"+v.routeKm+"km");setCachedText("drawerDevice",t.netOk?"在线":"异常");
@@ -3042,7 +3042,7 @@ function renderMine(force=false){
   perfState.cache.audit=sig;
   $("audit").innerHTML=(list.length?list:[{time:new Date().toISOString(),actor:"system",action:"本地运行",detail:"当前为本地数据模式；连接完整联调版后显示后端审计记录"}]).map(x=>`<article><b>${esc(x.action)}</b><time>${fmtTime(x.time)}</time><p>${esc(x.actor)}｜${esc(x.detail)}</p></article>`).join("")
 };
-function goPage(id){if(id!=="map")stopDriveFrames();document.querySelectorAll(".bottom-nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===id));document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));state.mapVisible=id==="map";if(id==="map"){const route=routeNow();applyLocalRoute(route,tNow().progress);enterStableLocalMapMode(route.title);setTimeout(()=>{if(state.map&&state.amapLoaded){showOnlineMapMode();state.map.resize();requestRoadMatchedRoute(false)}else loadAmap(false)},120)}scheduleActiveRender(0,true)}
+function goPage(id){if(id!=="map"){stopDriveFrames();stopAmapRetry()}document.querySelectorAll(".bottom-nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===id));document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));state.mapVisible=id==="map";if(id==="map"){const route=routeNow();applyLocalRoute(route,tNow().progress);enterStableLocalMapMode(route.title);setTimeout(resumeOnlineMap,120)}scheduleActiveRender(0,true)}
 async function runSafetyCheck(){goPage("safety");$("scanLine").classList.add("running");$("scanScore").textContent="扫描中";$("scanText").textContent="正在检查设备供电……";$("scanBar").style.width="0%";let p=0,stages=["硬件检查","车辆数据","定位通信","算法服务"];const timer=setInterval(()=>{p+=8;$("scanBar").style.width=Math.min(100,p)+"%";$("scanText").textContent="正在执行"+stages[Math.min(3,Math.floor(p/25))]+"……";if(p>=100){clearInterval(timer);finishCheck()}},180)}
 async function finishCheck(){const v=vNow(),t=tNow();if(state.backend){state.lastCheck=await api("/api/safety-check",{method:"POST",body:JSON.stringify({vehicleId:state.current})});state.data=await api("/api/bootstrap")}else{const checks=[["设备供电","正常",t.voltage+"V"],["CAN监听",t.canOk?"正常":"异常","Listen-only"],["RTK定位",t.rtkOk?"正常":"异常",t.accuracy+"m"],["5G通信",t.netOk?"正常":"异常",t.networkDelay+"ms"],["协议库匹配","正常",v.protocol],["天气服务",t.visibility<500?"关注":"正常",t.visibility+"m"],["风险模型","正常",t.modelVersion],["日志存储","正常","持续写入"],["服务器连接","关注","预览模式"]].map(x=>({name:x[0],status:x[1],value:x[2]}));const abnormal=checks.filter(x=>x.status==="异常").length,attention=checks.filter(x=>x.status==="关注").length;state.lastCheck={score:100-abnormal*18-attention*4,normal:9-abnormal-attention,attention,abnormal,checks}}$("scanLine").classList.remove("running");renderAll();toast("四阶段安全体检完成")}
 async function createWo(){if(!state.backend)return toast("静态预览不写入工单，请启动后端");await api("/api/workorders",{method:"POST",body:JSON.stringify({vehicleId:state.current})});state.data=await api("/api/bootstrap");renderAll();toast("工单已生成并持久化")}
@@ -3092,9 +3092,7 @@ if($("runDiagnostics"))$("runDiagnostics").onclick=()=>{renderDiagnostics(true);
 if($("copyDiagnostics"))$("copyDiagnostics").onclick=copyDiagnosticInfo;
 if($("clearLegacyCache"))$("clearLegacyCache").onclick=clearLegacyCache;
 $("notificationBtn").onclick=()=>$("notifyOverlay").classList.add("show");$("closeNotify").onclick=()=>$("notifyOverlay").classList.remove("show");$("notifyOverlay").onclick=e=>{if(e.target===$("notifyOverlay"))$("notifyOverlay").classList.remove("show")};$("sheetOverlay").onclick=e=>{if(e.target===$("sheetOverlay"))$("sheetOverlay").classList.remove("show")};$("switchVehicle").onclick=showFleetPicker;$("openTimeline").onclick=()=>openSheet("timeline");$("quickWorkOrder").onclick=createWo;$("createWo").onclick=createWo;$("completeWo").onclick=completeWo;$("runCheck").onclick=runSafetyCheck;$("mapLocate").onclick=()=>{if(state.map&&state.onlineMapVisible)fitCurrentRoadRoute();else applyLocalRoute(routeNow(),tNow().progress);toast("已完整显示当前路线")};$("mapLayers").onclick=()=>{
-  if(state.map&&state.onlineMapVisible){enterStableLocalMapMode(routeNow().title);toast("已切换为本地路线稳定模式");return}
-  if(state.amapLoaded&&state.map){showOnlineMapMode();state.map.resize();requestRoadMatchedRoute(false);toast("已切换在线道路地图");return}
-  state.amapLoading=false;cleanupAmapScripts();loadAmap(true);toast("正在尝试连接在线道路地图")
+  loadAmap(true);toast("正在连接在线地图")
 };
 document.querySelectorAll("[data-page]").forEach(b=>b.onclick=()=>goPage(b.dataset.page));document.querySelectorAll("[data-action='health']").forEach(b=>b.onclick=runSafetyCheck);document.querySelectorAll("[data-sheet]").forEach(b=>b.onclick=()=>openSheet(b.dataset.sheet));document.querySelectorAll("[data-report]").forEach(b=>b.onclick=()=>createReport(b.dataset.report));
 let stableTickBusy=false;

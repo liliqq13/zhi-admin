@@ -10,7 +10,8 @@ const onlineMap = {
   tileStatus:'idle', tileError:'', lastTileRetryAt:0,
   routeStatus:'idle', routeId:'', routeSource:'', routeKind:'none', routeError:'',
   inflight:new Map(), attempts:new Map(), routeFailures:new Map(),
-  queue:Promise.resolve(), lastRequestAt:0, tiles:null, tileTimer:null
+  queue:Promise.resolve(), lastRequestAt:0, tiles:null, tileTimer:null,
+  retryTimer:null, retryCount:0
 };
 const mapOptions = CFG.map || {};
 function mapToWgs84(point, source = mapOptions.sourceCoordSystem) {
@@ -61,7 +62,7 @@ function updateOnlineMapInfo(){
     retry=current&&onlineMap.routeStatus==='error'?'重试道路规划':'刷新道路路线';
   }else if(!onlineMap.userLocal){
     if(onlineMap.tileStatus==='loading')message='在线底图连接中 · 暂时显示本地示意';
-    else if(onlineMap.tileError)message=onlineMap.tileError+' · 本地示意仍可用';
+    else if(onlineMap.tileError)message=onlineMap.tileError+(onlineMap.retryTimer?' · 正在自动重连':navigator.onLine?' · 请检查网络连接':' · 联网后自动连接');
     retry='重试在线底图';
   }
   $('onlineMapMessage').textContent=message;
@@ -191,11 +192,33 @@ function showOnlineMapMode(){
   state.onlineMapVisible=true;hidePcMapStatus();updateOnlineMapInfo();return true;
 }
 function cleanupAmapScripts(){}
-function scheduleAmapRetry(){} // Manual retry only; no repeated tile polling.
-function loadAmap(manual=false){
+function stopAmapRetry(reset=false){
+  clearTimeout(onlineMap.retryTimer);onlineMap.retryTimer=null;
+  if(reset)onlineMap.retryCount=0;
+}
+function scheduleAmapRetry(){
+  // Retry only the visible viewport, at most three times per foreground visit.
+  // Background/offline pages never poll the public tile service.
+  if(onlineMap.retryTimer||onlineMap.retryCount>=3||onlineMap.tileReady||onlineMap.userLocal||onlineMap.tileStatus==='loading'||!navigator.onLine||document.hidden||!mapPageIsVisible())return;
+  const delay=[5000,15000,30000][onlineMap.retryCount];
+  onlineMap.retryTimer=setTimeout(()=>{
+    onlineMap.retryTimer=null;
+    if(!navigator.onLine||document.hidden||!mapPageIsVisible()||onlineMap.tileReady||onlineMap.userLocal)return;
+    onlineMap.retryCount++;onlineMap.failureUntil=0;loadAmap(false,true);
+  },delay);
+  updateOnlineMapInfo();
+}
+function resumeOnlineMap(){
+  if(document.hidden||!mapPageIsVisible())return;
+  onlineMap.userLocal=false;onlineMap.failureUntil=0;stopAmapRetry(true);loadAmap(false);
+}
+function loadAmap(manual=false,scheduledRetry=false){
   ensureOnlineMapInfo();
-  if(manual){onlineMap.userLocal=false;onlineMap.failureUntil=0}
-  if(onlineMap.userLocal||(!manual&&Date.now()<onlineMap.failureUntil))return;
+  if(document.hidden||!mapPageIsVisible())return;
+  if(manual){onlineMap.userLocal=false;onlineMap.failureUntil=0;stopAmapRetry(true)}
+  if(onlineMap.userLocal)return;
+  if(!manual&&!scheduledRetry&&!onlineMap.tileReady&&onlineMap.retryCount>=3)return;
+  if(!manual&&(onlineMap.retryTimer||Date.now()<onlineMap.failureUntil)){scheduleAmapRetry();return}
   if(!mapOptions.enabled||!window.L){onlineMap.tileStatus='error';onlineMap.tileError=!mapOptions.enabled?'在线底图未启用':'在线底图组件未加载';state.amapLoadError=onlineMap.tileError;onlineMap.failureUntil=Date.now()+10000;enterStableLocalMapMode();return}
   if(!navigator.onLine){onlineMap.tileError='网络未连接';state.amapLoadError=onlineMap.tileError;if(onlineMap.tileReady)showOnlineMapMode();else{onlineMap.tileStatus='offline';enterStableLocalMapMode()}return}
   const existed=!!state.map;
@@ -204,10 +227,10 @@ function loadAmap(manual=false){
   if(state.map)requestRoadMatchedRoute(manual);
 }
 function retryMapTiles(manual=false){
-  if(!onlineMap.tiles||onlineMap.userLocal||!navigator.onLine||!mapPageIsVisible())return false;
+  if(!onlineMap.tiles||onlineMap.userLocal||!navigator.onLine||document.hidden||!mapPageIsVisible())return false;
   const wait=5000-(Date.now()-onlineMap.lastTileRetryAt);
-  if(wait>0){if(manual)toast('底图请在'+Math.ceil(wait/1000)+'秒后重试');return false}
-  onlineMap.lastTileRetryAt=Date.now();onlineMap.failureUntil=0;onlineMap.tileStatus='loading';onlineMap.tileError='';
+  if(wait>0){if(manual)toast('底图将在稍后自动重连');scheduleAmapRetry();return false}
+  stopAmapRetry();onlineMap.lastTileRetryAt=Date.now();onlineMap.failureUntil=0;onlineMap.tileStatus='loading';onlineMap.tileError='';
   onlineMap.batchOK=0;onlineMap.batchErrors=0;state.amapLoading=true;state.amapLoadError='';
   onlineMap.tiles.redraw();updateOnlineMapInfo();return true;
 }
@@ -224,18 +247,16 @@ function initAmap(){
     state.map.on('click',()=>setDrawerExpanded(false));
     const tiles=L.tileLayer(mapOptions.tileUrl||'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:Number(mapOptions.maxZoom)||19,updateWhenIdle:true,updateWhenZooming:false,keepBuffer:0,referrerPolicy:'strict-origin-when-cross-origin'});
     onlineMap.tiles=tiles;
-    const fail=reason=>{onlineMap.tileReady=false;onlineMap.tileStatus=navigator.onLine?'error':'offline';onlineMap.tileError=reason;state.amapLoading=false;state.amapLoadError=reason;onlineMap.failureUntil=Date.now()+5000;enterStableLocalMapMode()};
+    const fail=reason=>{onlineMap.tileReady=false;onlineMap.tileStatus=navigator.onLine?'error':'offline';onlineMap.tileError=reason;state.amapLoading=false;state.amapLoadError=reason;onlineMap.failureUntil=Date.now()+5000;enterStableLocalMapMode();scheduleAmapRetry()};
     tiles.on('loading',()=>{onlineMap.batchOK=0;onlineMap.batchErrors=0;onlineMap.tileStatus='loading';state.amapLoading=!onlineMap.tileReady;clearTimeout(onlineMap.tileTimer);onlineMap.tileTimer=setTimeout(()=>{if(!onlineMap.batchOK)fail('在线底图连接超时')},15000);updateOnlineMapInfo()});
-    tiles.on('tileload',()=>{onlineMap.batchOK++;onlineMap.tileReady=true;onlineMap.tileStatus='ready';onlineMap.tileError='';state.amapLoading=false;state.amapLoadError='';if(!onlineMap.userLocal){showOnlineMapMode();syncDriveMotion()}});
+    tiles.on('tileload',()=>{stopAmapRetry(true);onlineMap.batchOK++;onlineMap.tileReady=true;onlineMap.tileStatus='ready';onlineMap.tileError='';state.amapLoading=false;state.amapLoadError='';if(!onlineMap.userLocal){showOnlineMapMode();syncDriveMotion()}});
     tiles.on('tileerror',()=>{onlineMap.batchErrors++});
     tiles.on('load',()=>{clearTimeout(onlineMap.tileTimer);if(!onlineMap.batchOK&&onlineMap.batchErrors)fail(navigator.onLine?'在线底图服务连接失败':'网络未连接，底图加载失败');else{state.amapLoading=false;onlineMap.tileStatus=onlineMap.batchErrors?'partial':'ready';updateOnlineMapInfo()}});
     tiles.addTo(state.map);requestRoadMatchedRoute(false);
-  }catch(error){clearTimeout(onlineMap.tileTimer);try{state.map?.remove()}catch{}state.map=null;onlineMap.tiles=null;onlineMap.tileReady=false;onlineMap.tileStatus='error';onlineMap.tileError='在线底图初始化失败';state.amapLoading=false;state.amapLoaded=false;onlineMap.failureUntil=Date.now()+10000;state.amapLoadError=onlineMap.tileError;enterStableLocalMapMode()}
+  }catch(error){clearTimeout(onlineMap.tileTimer);try{state.map?.remove()}catch{}state.map=null;onlineMap.tiles=null;onlineMap.tileReady=false;onlineMap.tileStatus='error';onlineMap.tileError='在线底图初始化失败';state.amapLoading=false;state.amapLoaded=false;onlineMap.failureUntil=Date.now()+10000;state.amapLoadError=onlineMap.tileError;enterStableLocalMapMode();scheduleAmapRetry()}
 }
 ensureOnlineMapInfo();
-if($('mapLayers'))$('mapLayers').onclick=()=>{
-  if(state.onlineMapVisible){onlineMap.userLocal=true;enterStableLocalMapMode();toast('已切换为本地测试路线示意')}
-  else{onlineMap.userLocal=false;loadAmap(true)}
-};
-window.addEventListener('online',()=>{onlineMap.failureUntil=0;if(mapPageIsVisible()&&!onlineMap.userLocal)loadAmap(false)},{passive:true});
-window.addEventListener('offline',()=>{clearTimeout(onlineMap.tileTimer);state.amapLoading=false;if(!onlineMap.tileReady){onlineMap.tileStatus='offline';onlineMap.tileError='网络未连接'}if(mapPageIsVisible()&&!onlineMap.userLocal){if(onlineMap.tileReady)showOnlineMapMode();else enterStableLocalMapMode()}updateOnlineMapInfo()},{passive:true});
+if($('mapLayers'))$('mapLayers').onclick=()=>{loadAmap(true);toast('正在连接在线地图')};
+window.addEventListener('online',resumeOnlineMap,{passive:true});
+window.addEventListener('offline',()=>{stopAmapRetry(true);clearTimeout(onlineMap.tileTimer);state.amapLoading=false;if(!onlineMap.tileReady){onlineMap.tileStatus='offline';onlineMap.tileError='网络未连接'}if(mapPageIsVisible()&&!onlineMap.userLocal){if(onlineMap.tileReady)showOnlineMapMode();else enterStableLocalMapMode()}updateOnlineMapInfo()},{passive:true});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopAmapRetry();else resumeOnlineMap()},{passive:true});
